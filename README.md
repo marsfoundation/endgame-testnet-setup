@@ -1,6 +1,20 @@
-# Simulator Scripts
+# Endgame Testnet Setup
 
-Scripts for setting up the environment of the simulator.
+A single script which will setup all contracts on Mainnet and Base from forks to deliver the latest available production setup for the Endgame along with critical Spark infrastructure.
+
+Deploys and configures:
+
+ * NST
+ * sNST
+ * Allocation System Core
+ * Spark ALM Controller
+ * Maker L2 Cross-chain Governance
+ * Token Bridge with NST + sNST Support
+ * L2 sNST Exchange Rate Oracle
+ * L2 PSM with Native USDC, NST and sNST swaps supported
+
+
+Contracts will be kept in line with latest available, so new mainnet fork testnets can be spun up easily.
 
 ## Usage
 
