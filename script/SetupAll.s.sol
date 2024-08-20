@@ -347,6 +347,8 @@ contract SetupAll is Script {
         address l1CrossDomain;
         if (domain.name.eq("base")) {
             l1CrossDomain = OptimismForwarder.L1_CROSS_DOMAIN_BASE;
+        } else {
+            revert("Unsupported domain");
         }
         address l2CrossDomain = OptimismForwarder.L2_CROSS_DOMAIN;  // Always the same
 
@@ -403,7 +405,7 @@ contract SetupAll is Script {
         l2Tokens[0] = address(domain.nst);
         l2Tokens[1] = address(domain.snst);
 
-        string memory clPrefix = domain.config.readString(".clPrefix");
+        string memory clPrefix = domain.config.readString(".chainlogPrefix");
 
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
             abi.encodeCall(mainnet.spell.initOpStackTokenBridge, (
@@ -440,6 +442,8 @@ contract SetupAll is Script {
         address expectedReceiver = vm.computeCreateAddress(deployer, 2);
         if (domain.name.eq("base")) {
             domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.snstInstance.sNst), expectedReceiver));
+        } else {
+            revert("Unsupported domain");
         }
 
         vm.selectFork(domain.forkId);
