@@ -28,3 +28,6 @@
 [submodule "lib/xchain-dsr-oracle"]
 	path = lib/xchain-dsr-oracle
 	url = https://github.com/marsfoundation/xchain-dsr-oracle
+[submodule "lib/erc20-helpers"]
+	path = lib/erc20-helpers
+	url = https://github.com/marsfoundation/erc20-helpers
