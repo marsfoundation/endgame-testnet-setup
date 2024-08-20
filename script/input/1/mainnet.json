@@ -1,0 +1,9 @@
+{
+  "chainlog": "0xdA0Ab1e0017DEbCd72Be8599041a2aa3bA7e740F",
+  "ilk": "SUBDAO-1-MAIN",
+  "maxLine": 100000000,
+  "gap": 5000000,
+  "ttl": 21600,
+  "relayer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "freezer": "0x298b375f24CeDb45e936D7e21d6Eb05e344adFb5"
+}
