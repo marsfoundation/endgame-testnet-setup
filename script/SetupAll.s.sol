@@ -7,10 +7,13 @@ import { stdJson } from "forge-std/StdJson.sol";
 import { MCD, DssInstance } from "lib/dss-test/src/DssTest.sol";
 import { ScriptTools }      from "lib/dss-test/src/ScriptTools.sol";
 
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
 import { ChainlogAbstract, DSPauseProxyAbstract } from "lib/dss-interfaces/src/Interfaces.sol";
 
 import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
+import { Nst }                    from "lib/nst/src/Nst.sol";
 import { NstDeploy, NstInstance } from "lib/nst/deploy/NstDeploy.sol";
 import { NstInit }                from "lib/nst/deploy/NstInit.sol";
 
@@ -37,9 +40,14 @@ import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarder
 import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
 import { DSRAuthOracle }               from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
 
-import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
+import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
 
-import { MockERC20 } from "lib/erc20-helpers/src/MockERC20.sol";
+import { L1TokenBridgeInstance }          from "lib/op-token-bridge/deploy/L1TokenBridgeInstance.sol";
+import { L2TokenBridgeInstance }          from "lib/op-token-bridge/deploy/L2TokenBridgeInstance.sol";
+import { TokenBridgeDeploy }              from "lib/op-token-bridge/deploy/TokenBridgeDeploy.sol";
+import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/TokenBridgeInit.sol";
+
+import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
@@ -133,6 +141,15 @@ contract SetupMainnetSpell {
         );
     }
 
+    function initOpStackTokenBridge(
+        DssInstance memory           dss,
+        L1TokenBridgeInstance memory l1BridgeInstance,
+        L2TokenBridgeInstance memory l2BridgeInstance,
+        BridgesConfig memory         cfg
+    ) external {
+        TokenBridgeInit.initBridges(dss, l1BridgeInstance, l2BridgeInstance, cfg);
+    }
+
 }
 
 contract SetupAll is Script {
@@ -163,11 +180,19 @@ contract SetupAll is Script {
         ALMProxy           almProxy;
     }
 
-    struct ForeignDomain {
+    struct OpStackForeignDomain {
         string  name;
         string  config;
         uint256 forkId;
         address admin;
+
+        // L2 versions of the tokens
+        Nst nst;
+        Nst snst;
+
+        // Token Bridge
+        L1TokenBridgeInstance l1BridgeInstance;
+        L2TokenBridgeInstance l2BridgeInstance;
 
         // ALM Controller
         address  almController;
@@ -177,16 +202,17 @@ contract SetupAll is Script {
         PSM3 psm;
 
         // XChain DSR Oracle
-        address       dsrForwarder;  // On Mainnet
-        address       dsrReceiver;
-        DSRAuthOracle dsrOracle;
+        address          dsrForwarder;  // On Mainnet
+        OptimismReceiver dsrReceiver;
+        DSRAuthOracle    dsrOracle;
     }
 
     using stdJson for string;
     using ScriptTools for string;
     
     EthereumDomain mainnet;
-    ForeignDomain  base;
+
+    OpStackForeignDomain base;
 
     address deployer;
 
@@ -201,7 +227,7 @@ contract SetupAll is Script {
         domain.spell    = new SetupMainnetSpell();
     }
 
-    function createForeignDomain(string memory name) internal returns (ForeignDomain memory domain) {
+    function createOpStackForeignDomain(string memory name) internal returns (OpStackForeignDomain memory domain) {
         domain.name   = name;
         domain.config = ScriptTools.loadConfig(name);
         domain.forkId = vm.createFork(getChain(name).rpcUrl);
@@ -304,7 +330,111 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
-    function setupCrossChainDSROracle(ForeignDomain storage domain) internal {
+    // Deploy an instance of NST which will closely resemble the L2 versions of the tokens
+    // TODO: This should be replaced by the actual tokens when they are available
+    function deployNstInstance(
+        address _deployer,
+        address _owner
+    ) internal returns (Nst instance) {
+        address _nstImp = address(new Nst());
+        address _nst = address((new ERC1967Proxy(_nstImp, abi.encodeCall(Nst.initialize, ()))));
+        ScriptTools.switchOwner(_nst, _deployer, _owner);
+
+        return Nst(_nst);
+    }
+
+    function setupOpStackTokenBridge(OpStackForeignDomain storage domain) internal {
+        address l1CrossDomain;
+        if (domain.name.eq("base")) {
+            l1CrossDomain = OptimismForwarder.L1_CROSS_DOMAIN_BASE;
+        }
+        address l2CrossDomain = OptimismForwarder.L2_CROSS_DOMAIN;  // Always the same
+
+        vm.selectFork(domain.forkId);
+
+        // Pre-compute L2 deployment addresses
+        uint256 nonce      = vm.getNonce(deployer);
+
+        // Mainnet deploy
+
+        vm.selectFork(mainnet.forkId);
+        
+        vm.startBroadcast();
+
+        domain.l1BridgeInstance = TokenBridgeDeploy.deployL1(
+            deployer,
+            mainnet.admin,
+            vm.computeCreateAddress(deployer, nonce),
+            vm.computeCreateAddress(deployer, nonce + 1),
+            l1CrossDomain
+        );
+
+        vm.stopBroadcast();
+
+        // L2 deploy
+
+        vm.selectFork(domain.forkId);
+        
+        vm.startBroadcast();
+
+        domain.l2BridgeInstance = TokenBridgeDeploy.deployL2(
+            deployer,
+            domain.l1BridgeInstance.govRelay,
+            domain.l1BridgeInstance.bridge,
+            l2CrossDomain
+        );
+
+        domain.nst  = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
+        domain.snst = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
+
+        vm.stopBroadcast();
+
+        // Initialization spell
+
+        vm.selectFork(mainnet.forkId);
+        
+        vm.startBroadcast();
+
+        address[] memory l1Tokens = new address[](2);
+        l1Tokens[0] = mainnet.nstInstance.nst;
+        l1Tokens[1] = mainnet.snstInstance.sNst;
+
+        address[] memory l2Tokens = new address[](2);
+        l2Tokens[0] = address(domain.nst);
+        l2Tokens[1] = address(domain.snst);
+
+        string memory clPrefix = domain.config.readString(".clPrefix");
+
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initOpStackTokenBridge, (
+                mainnet.dss,
+                domain.l1BridgeInstance,
+                domain.l2BridgeInstance,
+                BridgesConfig({
+                    l1Messenger    : l1CrossDomain,
+                    l2Messenger    : l2CrossDomain,
+                    l1Tokens       : l1Tokens,
+                    l2Tokens       : l2Tokens,
+                    minGasLimit    : 5_000_000,  // Should be enough gas to execute the l2 spell
+                    govRelayCLKey  : string.concat(clPrefix, "_GOV_RELAY").stringToBytes32(),
+                    escrowCLKey    : string.concat(clPrefix, "_ESCROW").stringToBytes32(),
+                    l1BridgeCLKey  : string.concat(clPrefix, "_TOKEN_BRIDGE").stringToBytes32()
+                })
+            ))
+        );
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(domain.name, "nst",        address(domain.nst));
+        ScriptTools.exportContract(domain.name, "snst",       address(domain.snst));
+        ScriptTools.exportContract(domain.name, "l1GovRelay", domain.l1BridgeInstance.govRelay);
+        ScriptTools.exportContract(domain.name, "l1Escrow",   domain.l1BridgeInstance.escrow);
+        ScriptTools.exportContract(domain.name, "l1TokenBridge",   domain.l1BridgeInstance.bridge);
+        ScriptTools.exportContract(domain.name, "govRelay", domain.l2BridgeInstance.govRelay);
+        ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2BridgeInstance.bridge);
+    }
+
+    function setupOpStackCrossChainDSROracle(OpStackForeignDomain storage domain) internal {
         vm.selectFork(mainnet.forkId);
         
         address expectedReceiver = vm.computeCreateAddress(deployer, 2);
@@ -314,30 +444,24 @@ contract SetupAll is Script {
 
         vm.selectFork(domain.forkId);
 
-        domain.dsrOracle = new DSRAuthOracle();
-        if (domain.name.eq("base")) {
-            domain.dsrReceiver = address(new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle)));
-        }
-        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), domain.dsrReceiver);
+        domain.dsrOracle   = new DSRAuthOracle();
+        domain.dsrReceiver = new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle));
+        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
 
-        ScriptTools.exportContract(domain.name, "dsrForwarder", domain.dsrForwarder);
-        ScriptTools.exportContract(domain.name, "dsrReceiver",  domain.dsrReceiver);
+        ScriptTools.exportContract(domain.name, "l1DSRForwarder", domain.dsrForwarder);
+        ScriptTools.exportContract(domain.name, "dsrReceiver",  address(domain.dsrReceiver));
         ScriptTools.exportContract(domain.name, "dsrOracle",    address(domain.dsrOracle));
     }
 
-    function setupForeignPSM(ForeignDomain storage domain) internal {
+    function setupOpStackForeignPSM(OpStackForeignDomain storage domain) internal {
         vm.selectFork(domain.forkId);
         
         vm.startBroadcast();
 
-        // FIXME: Placeholder until https://github.com/makerdao/op-token-bridge is public
-        MockERC20 nst  = new MockERC20("NST", "NST", 18);
-        MockERC20 snst = new MockERC20("sNST", "sNST", 18);
-
         domain.psm = new PSM3(
             base.config.readAddress(".usdc"),
-            address(nst),
-            address(snst),
+            address(domain.nst),
+            address(domain.snst),
             address(domain.dsrOracle)
         );
 
@@ -353,14 +477,16 @@ contract SetupAll is Script {
         deployer = msg.sender;
 
         mainnet = createEthereumDomain();
-        base    = createForeignDomain("base");
+        base    = createOpStackForeignDomain("base");
 
         setupNewTokens();
         setupAllocationSystem();
         setupALMController();
 
-        setupCrossChainDSROracle(base);
-        setupForeignPSM(base);
+        setupOpStackTokenBridge(base);
+        setupOpStackCrossChainDSROracle(base);
+        setupOpStackForeignPSM(base);
+        
     }
 
 }
