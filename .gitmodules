@@ -22,3 +22,6 @@
 [submodule "lib/spark-address-registry"]
 	path = lib/spark-address-registry
 	url = https://github.com/marsfoundation/spark-address-registry
+[submodule "lib/spark-psm"]
+	path = lib/spark-psm
+	url = https://github.com/marsfoundation/spark-psm
