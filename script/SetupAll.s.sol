@@ -4,42 +4,42 @@ pragma solidity ^0.8.0;
 import { Script }  from "forge-std/Script.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 
-import { MCD, DssInstance } from "dss-test/DssTest.sol";
-import { ScriptTools }      from "dss-test/ScriptTools.sol";
+import { MCD, DssInstance } from "lib/dss-test/src/DssTest.sol";
+import { ScriptTools }      from "lib/dss-test/src/ScriptTools.sol";
 
-import { ChainlogAbstract, DSPauseProxyAbstract } from "dss-interfaces/Interfaces.sol";
+import { ChainlogAbstract, DSPauseProxyAbstract } from "lib/dss-interfaces/src/Interfaces.sol";
 
-import { Ethereum } from "spark-address-registry/Ethereum.sol";
+import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
-import { NstDeploy, NstInstance } from "nst/deploy/NstDeploy.sol";
-import { NstInit }                from "nst/deploy/NstInit.sol";
+import { NstDeploy, NstInstance } from "lib/nst/deploy/NstDeploy.sol";
+import { NstInit }                from "lib/nst/deploy/NstInit.sol";
 
-import { SNstDeploy, SNstInstance } from "sdai/deploy/SNstDeploy.sol";
-import { SNstInit, SNstConfig }     from "sdai/deploy/SNstInit.sol";
+import { SNstDeploy, SNstInstance } from "lib/sdai/deploy/SNstDeploy.sol";
+import { SNstInit, SNstConfig }     from "lib/sdai/deploy/SNstInit.sol";
 
 import {
     AllocatorDeploy,
     AllocatorSharedInstance,
     AllocatorIlkInstance
-} from "dss-allocator/deploy/AllocatorDeploy.sol";
+} from "lib/dss-allocator/deploy/AllocatorDeploy.sol";
 import {
     AllocatorInit,
     AllocatorIlkConfig,
     VaultLike
-} from "dss-allocator/deploy/AllocatorInit.sol";
-import { AllocatorBuffer } from "dss-allocator/src/AllocatorBuffer.sol";
-import { AllocatorVault }  from "dss-allocator/src/AllocatorVault.sol";
+} from "lib/dss-allocator/deploy/AllocatorInit.sol";
+import { AllocatorBuffer } from "lib/dss-allocator/src/AllocatorBuffer.sol";
+import { AllocatorVault }  from "lib/dss-allocator/src/AllocatorVault.sol";
 
-import { ALMProxy }           from "spark-alm-controller/ALMProxy.sol";
-import { EthereumController } from "spark-alm-controller/EthereumController.sol";
+import { ALMProxy }          from "lib/spark-alm-controller/src/ALMProxy.sol";
+import { MainnetController } from "lib/spark-alm-controller/src/MainnetController.sol";
 
-import { DSROracleForwarderBaseChain } from "xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
-import { OptimismReceiver }            from "xchain-helpers/receivers/OptimismReceiver.sol";
-import { DSRAuthOracle }               from "xchain-dsr-oracle/src/DSRAuthOracle.sol";
+import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
+import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
+import { DSRAuthOracle }               from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
 
-import { PSM3 } from "spark-psm/PSM3.sol";
+import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
-import { MockERC20 } from "erc20-helpers/MockERC20.sol";
+import { MockERC20 } from "lib/erc20-helpers/src/MockERC20.sol";
 
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
@@ -93,7 +93,7 @@ contract SetupMainnetSpell {
         NstInstance memory nstInstance,
         AllocatorIlkInstance memory allocatorIlkInstance,
         ALMProxy almProxy,
-        EthereumController ethereumController,
+        MainnetController mainnetController,
         address freezer,
         address relayer
     ) external {
@@ -104,7 +104,7 @@ contract SetupMainnetSpell {
                 nstInstance,
                 allocatorIlkInstance,
                 almProxy,
-                ethereumController,
+                mainnetController,
                 freezer,
                 relayer
             )
@@ -115,16 +115,16 @@ contract SetupMainnetSpell {
         NstInstance memory nstInstance,
         AllocatorIlkInstance memory allocatorIlkInstance,
         ALMProxy almProxy,
-        EthereumController ethereumController,
+        MainnetController mainnetController,
         address freezer,
         address relayer
     ) external {
         AllocatorVault(allocatorIlkInstance.vault).rely(address(almProxy));
 
-        ethereumController.grantRole(ethereumController.FREEZER(), freezer);
-        ethereumController.grantRole(ethereumController.RELAYER(), relayer);
+        mainnetController.grantRole(mainnetController.FREEZER(), freezer);
+        mainnetController.grantRole(mainnetController.RELAYER(), relayer);
 
-        almProxy.grantRole(almProxy.CONTROLLER(), address(ethereumController));
+        almProxy.grantRole(almProxy.CONTROLLER(), address(mainnetController));
 
         AllocatorBuffer(allocatorIlkInstance.buffer).approve(
             nstInstance.nst,
@@ -159,7 +159,7 @@ contract SetupAll is Script {
         AllocatorIlkInstance    allocatorIlkInstance;
 
         // ALM Controller
-        EthereumController almController;
+        MainnetController almController;
         ALMProxy           almProxy;
     }
 
@@ -276,13 +276,14 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         mainnet.almProxy = new ALMProxy(Ethereum.SPARK_PROXY);
-        mainnet.almController = new EthereumController({
+        mainnet.almController = new MainnetController({
             admin_  : Ethereum.SPARK_PROXY,
             proxy_  : address(mainnet.almProxy),
             vault_  : mainnet.allocatorIlkInstance.vault,
             buffer_ : mainnet.allocatorIlkInstance.buffer,
-            snst_   : mainnet.snstInstance.sNst,
-            psm_    : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A")
+            psm_    : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
+            daiNst_ : mainnet.nstInstance.daiNst,
+            snst_   : mainnet.snstInstance.sNst
         });
 
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
