@@ -228,6 +228,8 @@ contract SetupAll is Script {
         domain.forkId   = vm.createSelectFork(getChain(domain.name).rpcUrl);
         domain.admin    = domain.chainlog.getAddress("MCD_PAUSE_PROXY");
         domain.dss      = MCD.loadFromChainlog(address(domain.chainlog));
+
+        vm.broadcast();
         domain.spell    = new SetupMainnetSpell();
     }
 
