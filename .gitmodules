@@ -37,3 +37,6 @@
 [submodule "lib/op-token-bridge"]
 	path = lib/op-token-bridge
 	url = https://github.com/makerdao/op-token-bridge
+[submodule "lib/safe-smart-account"]
+	path = lib/safe-smart-account
+	url = https://github.com/safe-global/safe-smart-account
