@@ -5,5 +5,7 @@
   "gap": 5000000,
   "ttl": 21600,
   "relayer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
-  "freezer": "0x298b375f24CeDb45e936D7e21d6Eb05e344adFb5"
+  "freezer": "0x298b375f24CeDb45e936D7e21d6Eb05e344adFb5",
+  "safeProxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+  "safeSingleton": "0x41675C099F32341bf84BFc5382aF534df5C7461a"
 }

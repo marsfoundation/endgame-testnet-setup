@@ -4,6 +4,9 @@ pragma solidity ^0.8.0;
 import { Script }  from "forge-std/Script.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 
+import { Safe }                        from "lib/safe-smart-account/contracts/Safe.sol";
+import { SafeProxyFactory, SafeProxy } from "lib/safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
+
 import { MCD, DssInstance } from "lib/dss-test/src/DssTest.sol";
 import { ScriptTools }      from "lib/dss-test/src/ScriptTools.sol";
 
@@ -176,8 +179,9 @@ contract SetupAll is Script {
         AllocatorIlkInstance    allocatorIlkInstance;
 
         // ALM Controller
+        address           safe;
         MainnetController almController;
-        ALMProxy           almProxy;
+        ALMProxy          almProxy;
     }
 
     struct OpStackForeignDomain {
@@ -209,7 +213,7 @@ contract SetupAll is Script {
 
     using stdJson for string;
     using ScriptTools for string;
-    
+
     EthereumDomain mainnet;
 
     OpStackForeignDomain base;
@@ -264,7 +268,7 @@ contract SetupAll is Script {
 
     function setupAllocationSystem() internal {
         vm.selectFork(mainnet.forkId);
-        
+
         vm.startBroadcast();
 
         mainnet.allocatorSharedInstance = AllocatorDeploy.deployShared(deployer, mainnet.admin);
@@ -296,9 +300,47 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "allocatorBuffer",   mainnet.allocatorIlkInstance.buffer);
     }
 
+    function _setupSafe(
+        address safeProxyFactoryAddress,
+        address safeSingletonAddress,
+        address relayerAddress
+    ) internal returns (address){
+        SafeProxyFactory factory = SafeProxyFactory(safeProxyFactoryAddress);
+
+        address[] memory owners = new address[](1);
+        owners[0] = relayerAddress;
+
+        bytes memory initData = abi.encodeCall(Safe.setup, (
+            owners,
+            1,
+            address(0),
+            "",
+            address(0),
+            address(0),
+            0,
+            payable(address(0))));
+        return address(factory.createProxyWithNonce(safeSingletonAddress, initData, 0));
+    }
+
+    function setupSafe() internal {
+        vm.selectFork(mainnet.forkId);
+
+        vm.startBroadcast();
+
+        mainnet.safe = _setupSafe(
+            mainnet.config.readAddress(".safeProxyFactory"),
+            mainnet.config.readAddress(".safeSingleton"),
+            mainnet.config.readAddress(".relayer")
+        );
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(mainnet.name, "safe",   mainnet.safe);
+    }
+
     function setupALMController() internal {
         vm.selectFork(mainnet.forkId);
-        
+
         vm.startBroadcast();
 
         mainnet.almProxy = new ALMProxy(Ethereum.SPARK_PROXY);
@@ -320,7 +362,7 @@ contract SetupAll is Script {
                 mainnet.almProxy,
                 mainnet.almController,
                 mainnet.config.readAddress(".freezer"),
-                mainnet.config.readAddress(".relayer")
+                mainnet.safe
             ))
         );
 
@@ -360,7 +402,7 @@ contract SetupAll is Script {
         // Mainnet deploy
 
         vm.selectFork(mainnet.forkId);
-        
+
         vm.startBroadcast();
 
         domain.l1BridgeInstance = TokenBridgeDeploy.deployL1(
@@ -376,7 +418,7 @@ contract SetupAll is Script {
         // L2 deploy
 
         vm.selectFork(domain.forkId);
-        
+
         vm.startBroadcast();
 
         domain.l2BridgeInstance = TokenBridgeDeploy.deployL2(
@@ -394,7 +436,7 @@ contract SetupAll is Script {
         // Initialization spell
 
         vm.selectFork(mainnet.forkId);
-        
+
         vm.startBroadcast();
 
         address[] memory l1Tokens = new address[](2);
@@ -432,13 +474,14 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "l1GovRelay", domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",   domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge",   domain.l1BridgeInstance.bridge);
+
         ScriptTools.exportContract(domain.name, "govRelay", domain.l2BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2BridgeInstance.bridge);
     }
 
     function setupOpStackCrossChainDSROracle(OpStackForeignDomain storage domain) internal {
         vm.selectFork(mainnet.forkId);
-        
+
         address expectedReceiver = vm.computeCreateAddress(deployer, 2);
         if (domain.name.eq("base")) {
             domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.snstInstance.sNst), expectedReceiver));
@@ -459,7 +502,7 @@ contract SetupAll is Script {
 
     function setupOpStackForeignPSM(OpStackForeignDomain storage domain) internal {
         vm.selectFork(domain.forkId);
-        
+
         vm.startBroadcast();
 
         domain.psm = new PSM3(
@@ -485,12 +528,13 @@ contract SetupAll is Script {
 
         setupNewTokens();
         setupAllocationSystem();
+        setupSafe();
         setupALMController();
 
         setupOpStackTokenBridge(base);
         setupOpStackCrossChainDSROracle(base);
         setupOpStackForeignPSM(base);
-        
+
     }
 
 }
