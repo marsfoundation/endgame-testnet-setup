@@ -231,6 +231,8 @@ contract SetupAll is Script {
 
         vm.broadcast();
         domain.spell    = new SetupMainnetSpell();
+
+        ScriptTools.exportContract(mainnet.name, "spell", address(domain.spell));
     }
 
     function createOpStackForeignDomain(string memory name) internal returns (OpStackForeignDomain memory domain) {
@@ -263,7 +265,6 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "nstImp",  mainnet.nstInstance.nstImp);
         ScriptTools.exportContract(mainnet.name, "nstJoin", mainnet.nstInstance.nstJoin);
         ScriptTools.exportContract(mainnet.name, "daiNst",  mainnet.nstInstance.daiNst);
-
         ScriptTools.exportContract(mainnet.name, "sNst",    mainnet.snstInstance.sNst);
         ScriptTools.exportContract(mainnet.name, "sNstImp", mainnet.snstInstance.sNstImp);
     }
@@ -471,12 +472,12 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(domain.name, "nst",        address(domain.nst));
-        ScriptTools.exportContract(domain.name, "sNst",       address(domain.snst));
-        ScriptTools.exportContract(domain.name, "l1GovRelay", domain.l1BridgeInstance.govRelay);
-        ScriptTools.exportContract(domain.name, "l1Escrow",   domain.l1BridgeInstance.escrow);
-        ScriptTools.exportContract(domain.name, "l1TokenBridge",   domain.l1BridgeInstance.bridge);
-        ScriptTools.exportContract(domain.name, "govRelay", domain.l2BridgeInstance.govRelay);
+        ScriptTools.exportContract(domain.name, "nst",           address(domain.nst));
+        ScriptTools.exportContract(domain.name, "sNst",          address(domain.snst));
+        ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
+        ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
+        ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1BridgeInstance.bridge);
+        ScriptTools.exportContract(domain.name, "govRelay",      domain.l2BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2BridgeInstance.bridge);
     }
 
@@ -497,8 +498,8 @@ contract SetupAll is Script {
         domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
 
         ScriptTools.exportContract(domain.name, "l1DSRForwarder", domain.dsrForwarder);
-        ScriptTools.exportContract(domain.name, "dsrReceiver",  address(domain.dsrReceiver));
-        ScriptTools.exportContract(domain.name, "dsrOracle",    address(domain.dsrOracle));
+        ScriptTools.exportContract(domain.name, "dsrReceiver",    address(domain.dsrReceiver));
+        ScriptTools.exportContract(domain.name, "dsrOracle",      address(domain.dsrOracle));
     }
 
     function setupOpStackForeignPSM(OpStackForeignDomain storage domain) internal {
