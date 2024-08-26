@@ -391,40 +391,6 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
-    function setupOpStackALMController(OpStackForeignDomain storage domain) internal {
-        vm.selectFork(domain.forkId);
-
-        vm.startBroadcast();
-
-        domain.almProxy = new ALMProxy(Ethereum.SPARK_PROXY);
-        domain.almController = new MainnetController({
-            admin_  : Ethereum.SPARK_PROXY,
-            proxy_  : address(domain.almProxy),
-            vault_  : domain.allocatorIlkInstance.vault,
-            buffer_ : domain.allocatorIlkInstance.buffer,
-            psm_    : domain.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
-            daiNst_ : domain.nstInstance.daiNst,
-            snst_   : domain.snstInstance.sNst
-        });
-
-        DSPauseProxyAbstract(domain.admin).exec(address(domain.spell),
-            abi.encodeCall(domain.spell.initALMController, (
-                address(domain.spell),
-                domain.nstInstance,
-                domain.allocatorIlkInstance,
-                domain.almProxy,
-                domain.almController,
-                domain.config.readAddress(".freezer"),
-                domain.safe
-            ))
-        );
-
-        vm.stopBroadcast();
-
-        ScriptTools.exportContract(mainnet.name, "almProxy",      address(mainnet.almProxy));
-        ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
-    }
-
     // Deploy an instance of NST which will closely resemble the L2 versions of the tokens
     // TODO: This should be replaced by the actual tokens when they are available
     function deployNstInstance(
