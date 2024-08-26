@@ -306,7 +306,7 @@ contract SetupAll is Script {
         address safeProxyFactoryAddress,
         address safeSingletonAddress,
         address relayerAddress
-    ) internal returns (address){
+    ) internal returns (address) {
         SafeProxyFactory factory = SafeProxyFactory(safeProxyFactoryAddress);
 
         address[] memory owners = new address[](1);
@@ -476,7 +476,6 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "l1GovRelay", domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",   domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge",   domain.l1BridgeInstance.bridge);
-
         ScriptTools.exportContract(domain.name, "govRelay", domain.l2BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2BridgeInstance.bridge);
     }
