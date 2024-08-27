@@ -37,3 +37,6 @@
 [submodule "lib/safe-smart-account"]
 	path = lib/safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account
+[submodule "lib/usds"]
+	path = lib/usds
+	url = https://github.com/makerdao/usds
