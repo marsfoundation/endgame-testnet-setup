@@ -192,8 +192,10 @@ contract SetupAll is Script {
         address admin;
 
         // L2 versions of the tokens
-        Nst nst;
-        Nst snst;
+        Nst     nst;
+        address nstImp;
+        Nst     snst;
+        address snstImp;
 
         // Token Bridge
         L1TokenBridgeInstance l1BridgeInstance;
@@ -378,17 +380,19 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
+
+    error TestError(address account);
+
     // Deploy an instance of NST which will closely resemble the L2 versions of the tokens
     // TODO: This should be replaced by the actual tokens when they are available
     function deployNstInstance(
         address _deployer,
         address _owner
-    ) internal returns (Nst instance) {
+    ) internal returns (Nst instance, address implementation) {
         address _nstImp = address(new Nst());
         address _nst = address((new ERC1967Proxy(_nstImp, abi.encodeCall(Nst.initialize, ()))));
         ScriptTools.switchOwner(_nst, _deployer, _owner);
-
-        return Nst(_nst);
+        return (Nst(_nst), _nstImp);
     }
 
     function setupOpStackTokenBridge(OpStackForeignDomain storage domain) internal {
@@ -434,8 +438,8 @@ contract SetupAll is Script {
             l2CrossDomain
         );
 
-        domain.nst  = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
-        domain.snst = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.nst, domain.nstImp)   = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.snst, domain.snstImp) = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
 
         vm.stopBroadcast();
 
@@ -476,6 +480,8 @@ contract SetupAll is Script {
         vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "nst",           address(domain.nst));
+        ScriptTools.exportContract(domain.name, "nstImp",        domain.nstImp);
+        ScriptTools.exportContract(domain.name, "sNstImp",       domain.snstImp);
         ScriptTools.exportContract(domain.name, "sNst",          address(domain.snst));
         ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
