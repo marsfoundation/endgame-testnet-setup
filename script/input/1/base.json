@@ -1,7 +1,9 @@
 {
   "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   "chainlogPrefix": "BASE",
+  "freezer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
   "relayer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
   "safeProxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
-  "safeSingleton": "0x41675C099F32341bf84BFc5382aF534df5C7461a"
+  "safeSingleton": "0x41675C099F32341bf84BFc5382aF534df5C7461a",
+  "cctpTokenMessenger": "0x1682Ae6375C4E4A97e4B583BC394c861A46D8962"
 }
