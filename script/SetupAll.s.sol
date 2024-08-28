@@ -555,13 +555,15 @@ contract SetupAll is Script {
             cctp_  : domain.config.readAddress(".cctpTokenMessenger")
         });
 
-        domain.almController.grantRole(domain.almController.FREEZER(), domain.config.readAddress(".freezer"));
-        domain.almController.grantRole(domain.almController.RELAYER(), domain.safe);
+        domain.almController.grantRole(domain.almController.FREEZER(),            domain.config.readAddress(".freezer"));
+        domain.almController.grantRole(domain.almController.RELAYER(),            domain.safe);
         domain.almController.grantRole(domain.almController.DEFAULT_ADMIN_ROLE(), domain.l2BridgeInstance.govRelay);
+
         domain.almController.revokeRole(domain.almController.DEFAULT_ADMIN_ROLE(), msg.sender);
 
-        domain.almProxy.grantRole(domain.almProxy.CONTROLLER(), address(domain.almController));
+        domain.almProxy.grantRole(domain.almProxy.CONTROLLER(),         address(domain.almController));
         domain.almProxy.grantRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), domain.l2BridgeInstance.govRelay);
+
         domain.almProxy.revokeRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), msg.sender);
 
         vm.stopBroadcast();
