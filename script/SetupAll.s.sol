@@ -481,8 +481,8 @@ contract SetupAll is Script {
 
         ScriptTools.exportContract(domain.name, "nst",           address(domain.nst));
         ScriptTools.exportContract(domain.name, "nstImp",        domain.nstImp);
-        ScriptTools.exportContract(domain.name, "sNstImp",       domain.snstImp);
         ScriptTools.exportContract(domain.name, "sNst",          address(domain.snst));
+        ScriptTools.exportContract(domain.name, "sNstImp",       domain.snstImp);
         ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1BridgeInstance.bridge);
