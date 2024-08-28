@@ -37,6 +37,7 @@ import { AllocatorBuffer } from "lib/dss-allocator/src/AllocatorBuffer.sol";
 import { AllocatorVault }  from "lib/dss-allocator/src/AllocatorVault.sol";
 
 import { ALMProxy }          from "lib/spark-alm-controller/src/ALMProxy.sol";
+import { ForeignController } from "lib/spark-alm-controller/src/ForeignController.sol";
 import { MainnetController } from "lib/spark-alm-controller/src/MainnetController.sol";
 
 import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
@@ -199,8 +200,9 @@ contract SetupAll is Script {
         L2TokenBridgeInstance l2BridgeInstance;
 
         // ALM Controller
-        address  almController;
-        ALMProxy almProxy;
+        address           safe;
+        ForeignController almController;
+        ALMProxy          almProxy;
 
         // PSM
         PSM3 psm;
@@ -338,7 +340,7 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(mainnet.name, "safe",   mainnet.safe);
+        ScriptTools.exportContract(mainnet.name, "safe", mainnet.safe);
     }
 
     function setupALMController() internal {
@@ -354,6 +356,7 @@ contract SetupAll is Script {
             buffer_  : mainnet.allocatorIlkInstance.buffer,
             psm_     : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
             daiUsds_ : mainnet.usdsInstance.daiUsds,
+            cctp_    : mainnet.config.readAddress(".cctpTokenMessenger"),
             susds_   : mainnet.susdsInstance.sUsds
         });
 
@@ -400,7 +403,7 @@ contract SetupAll is Script {
         vm.selectFork(domain.forkId);
 
         // Pre-compute L2 deployment addresses
-        uint256 nonce      = vm.getNonce(deployer);
+        uint256 nonce = vm.getNonce(deployer);
 
         // Mainnet deploy
 
@@ -508,7 +511,7 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         domain.psm = new PSM3(
-            base.config.readAddress(".usdc"),
+            domain.config.readAddress(".usdc"),
             address(domain.usds),
             address(domain.susds),
             address(domain.dsrOracle)
@@ -517,6 +520,56 @@ contract SetupAll is Script {
         vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "psm", address(domain.psm));
+    }
+
+    function setupOpStackSafe(OpStackForeignDomain storage domain) internal {
+        vm.selectFork(domain.forkId);
+
+        vm.startBroadcast();
+
+        domain.safe = _setupSafe(
+            domain.config.readAddress(".safeProxyFactory"),
+            domain.config.readAddress(".safeSingleton"),
+            domain.config.readAddress(".relayer")
+        );
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(domain.name, "safe", domain.safe);
+    }
+
+    function setupOpStackALMController(OpStackForeignDomain storage domain) internal {
+        vm.selectFork(domain.forkId);
+
+        vm.startBroadcast();
+
+        // Temporarily granting admin role to the deployer for straightforward configuration
+        domain.almProxy = new ALMProxy(msg.sender);
+        domain.almController = new ForeignController({
+            admin_ : msg.sender,
+            proxy_ : address(domain.almProxy),
+            psm_   : address(domain.psm),
+            nst_   : address(domain.nst),
+            usdc_  : domain.config.readAddress(".usdc"),
+            snst_  : address(domain.snst),
+            cctp_  : domain.config.readAddress(".cctpTokenMessenger")
+        });
+
+        domain.almController.grantRole(domain.almController.FREEZER(),            domain.config.readAddress(".freezer"));
+        domain.almController.grantRole(domain.almController.RELAYER(),            domain.safe);
+        domain.almController.grantRole(domain.almController.DEFAULT_ADMIN_ROLE(), domain.l2BridgeInstance.govRelay);
+
+        domain.almController.revokeRole(domain.almController.DEFAULT_ADMIN_ROLE(), msg.sender);
+
+        domain.almProxy.grantRole(domain.almProxy.CONTROLLER(),         address(domain.almController));
+        domain.almProxy.grantRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), domain.l2BridgeInstance.govRelay);
+
+        domain.almProxy.revokeRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), msg.sender);
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(domain.name, "almProxy",      address(domain.almProxy));
+        ScriptTools.exportContract(domain.name, "almController", address(domain.almController));
     }
 
     function run() public {
@@ -536,7 +589,8 @@ contract SetupAll is Script {
         setupOpStackTokenBridge(base);
         setupOpStackCrossChainDSROracle(base);
         setupOpStackForeignPSM(base);
-
+        setupOpStackSafe(base);
+        setupOpStackALMController(base);
     }
 
 }
