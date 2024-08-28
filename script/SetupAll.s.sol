@@ -71,7 +71,7 @@ contract SetupMainnetSpell {
         SUsdsInit.init(dss, susdsInstance, SUsdsConfig({
             usdsJoin: usdsInstance.usdsJoin,
             usds:     usdsInstance.usds,
-            nsr:      DSR_INITIAL_RATE
+            ssr:      DSR_INITIAL_RATE
         }));
     }
 
