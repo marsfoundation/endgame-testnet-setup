@@ -380,9 +380,6 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
-
-    error TestError(address account);
-
     // Deploy an instance of NST which will closely resemble the L2 versions of the tokens
     // TODO: This should be replaced by the actual tokens when they are available
     function deployNstInstance(
