@@ -549,9 +549,9 @@ contract SetupAll is Script {
             admin_ : msg.sender,
             proxy_ : address(domain.almProxy),
             psm_   : address(domain.psm),
-            nst_   : address(domain.nst),
+            usds_  : address(domain.usds),
             usdc_  : domain.config.readAddress(".usdc"),
-            snst_  : address(domain.snst),
+            susds_ : address(domain.susds),
             cctp_  : domain.config.readAddress(".cctpTokenMessenger")
         });
 
