@@ -340,7 +340,7 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(mainnet.name, "safe",   mainnet.safe);
+        ScriptTools.exportContract(mainnet.name, "safe", mainnet.safe);
     }
 
     function setupALMController() internal {
@@ -403,7 +403,7 @@ contract SetupAll is Script {
         vm.selectFork(domain.forkId);
 
         // Pre-compute L2 deployment addresses
-        uint256 nonce      = vm.getNonce(deployer);
+        uint256 nonce = vm.getNonce(deployer);
 
         // Mainnet deploy
 
@@ -535,7 +535,7 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(domain.name, "safe",   domain.safe);
+        ScriptTools.exportContract(domain.name, "safe", domain.safe);
     }
 
     function setupOpStackALMController(OpStackForeignDomain storage domain) internal {
