@@ -57,6 +57,10 @@ interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
 }
 
+interface ILitePSM {
+    function kiss(address usr) external;
+}
+
 contract SetupMainnetSpell {
 
     uint256 constant DSR_INITIAL_RATE     = 1000000001847694957439350562;  // 6% APY
@@ -109,6 +113,9 @@ contract SetupMainnetSpell {
         address freezer,
         address relayer
     ) external {
+        // Whitelist the proxy on the Lite PSM
+        ILitePSM(address(mainnetController.psm())).kiss(address(almProxy));
+
         // Need to execute as the Spark Proxy
         ISparkProxy(Ethereum.SPARK_PROXY).exec(spell, abi.encodeCall(
             this.sparkProxy_initALMController,
