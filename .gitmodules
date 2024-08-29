@@ -4,9 +4,6 @@
 [submodule "lib/sdai"]
 	path = lib/sdai
 	url = https://github.com/makerdao/sdai
-[submodule "lib/nst"]
-	path = lib/nst
-	url = https://github.com/makerdao/nst
 [submodule "lib/dss-allocator"]
 	path = lib/dss-allocator
 	url = https://github.com/makerdao/dss-allocator
@@ -40,3 +37,6 @@
 [submodule "lib/safe-smart-account"]
 	path = lib/safe-smart-account
 	url = https://github.com/safe-global/safe-smart-account
+[submodule "lib/usds"]
+	path = lib/usds
+	url = https://github.com/makerdao/usds

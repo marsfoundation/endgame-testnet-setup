@@ -16,12 +16,12 @@ import { ChainlogAbstract, DSPauseProxyAbstract } from "lib/dss-interfaces/src/I
 
 import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
-import { Nst }                    from "lib/nst/src/Nst.sol";
-import { NstDeploy, NstInstance } from "lib/nst/deploy/NstDeploy.sol";
-import { NstInit }                from "lib/nst/deploy/NstInit.sol";
+import { Usds }                     from "lib/usds/src/Usds.sol";
+import { UsdsDeploy, UsdsInstance } from "lib/usds/deploy/UsdsDeploy.sol";
+import { UsdsInit }                 from "lib/usds/deploy/UsdsInit.sol";
 
-import { SNstDeploy, SNstInstance } from "lib/sdai/deploy/SNstDeploy.sol";
-import { SNstInit, SNstConfig }     from "lib/sdai/deploy/SNstInit.sol";
+import { SUsdsDeploy, SUsdsInstance } from "lib/sdai/deploy/SUsdsDeploy.sol";
+import { SUsdsInit, SUsdsConfig }     from "lib/sdai/deploy/SUsdsInit.sol";
 
 import {
     AllocatorDeploy,
@@ -64,14 +64,14 @@ contract SetupMainnetSpell {
 
     function initTokens(
         DssInstance memory dss,
-        NstInstance memory nstInstance,
-        SNstInstance memory snstInstance
+        UsdsInstance memory usdsInstance,
+        SUsdsInstance memory susdsInstance
     ) external {
-        NstInit.init(dss, nstInstance);
-        SNstInit.init(dss, snstInstance, SNstConfig({
-            nstJoin: nstInstance.nstJoin,
-            nst:     nstInstance.nst,
-            nsr:     DSR_INITIAL_RATE
+        UsdsInit.init(dss, usdsInstance);
+        SUsdsInit.init(dss, susdsInstance, SUsdsConfig({
+            usdsJoin: usdsInstance.usdsJoin,
+            usds:     usdsInstance.usds,
+            ssr:      DSR_INITIAL_RATE
         }));
     }
 
@@ -102,7 +102,7 @@ contract SetupMainnetSpell {
 
     function initALMController(
         address spell,
-        NstInstance memory nstInstance,
+        UsdsInstance memory usdsInstance,
         AllocatorIlkInstance memory allocatorIlkInstance,
         ALMProxy almProxy,
         MainnetController mainnetController,
@@ -113,7 +113,7 @@ contract SetupMainnetSpell {
         ISparkProxy(Ethereum.SPARK_PROXY).exec(spell, abi.encodeCall(
             this.sparkProxy_initALMController,
             (
-                nstInstance,
+                usdsInstance,
                 allocatorIlkInstance,
                 almProxy,
                 mainnetController,
@@ -124,7 +124,7 @@ contract SetupMainnetSpell {
     }
 
     function sparkProxy_initALMController(
-        NstInstance memory nstInstance,
+        UsdsInstance memory usdsInstance,
         AllocatorIlkInstance memory allocatorIlkInstance,
         ALMProxy almProxy,
         MainnetController mainnetController,
@@ -139,7 +139,7 @@ contract SetupMainnetSpell {
         almProxy.grantRole(almProxy.CONTROLLER(), address(mainnetController));
 
         AllocatorBuffer(allocatorIlkInstance.buffer).approve(
-            nstInstance.nst,
+            usdsInstance.usds,
             address(almProxy),
             type(uint256).max
         );
@@ -172,8 +172,8 @@ contract SetupAll is Script {
         SetupMainnetSpell spell;
 
         // New tokens
-        NstInstance  nstInstance;
-        SNstInstance snstInstance;
+        UsdsInstance  usdsInstance;
+        SUsdsInstance susdsInstance;
 
         // Allocation system
         AllocatorSharedInstance allocatorSharedInstance;
@@ -192,10 +192,10 @@ contract SetupAll is Script {
         address admin;
 
         // L2 versions of the tokens
-        Nst     nst;
-        address nstImp;
-        Nst     snst;
-        address snstImp;
+        Usds usds;
+        address usdsImp;
+        Usds susds;
+        address susdsImp;
 
         // Token Bridge
         L1TokenBridgeInstance l1BridgeInstance;
@@ -251,26 +251,26 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         // Deploy phase
-        mainnet.nstInstance  = NstDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
-        mainnet.snstInstance = SNstDeploy.deploy(deployer, mainnet.admin, mainnet.nstInstance.nstJoin);
+        mainnet.usdsInstance  = UsdsDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
+        mainnet.susdsInstance = SUsdsDeploy.deploy(deployer, mainnet.admin, mainnet.usdsInstance.usdsJoin);
 
         // Initialization phase (needs executing as pause proxy owner)
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
             abi.encodeCall(mainnet.spell.initTokens, (
                 mainnet.dss,
-                mainnet.nstInstance,
-                mainnet.snstInstance
+                mainnet.usdsInstance,
+                mainnet.susdsInstance
             ))
         );
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(mainnet.name, "nst",     mainnet.nstInstance.nst);
-        ScriptTools.exportContract(mainnet.name, "nstImp",  mainnet.nstInstance.nstImp);
-        ScriptTools.exportContract(mainnet.name, "nstJoin", mainnet.nstInstance.nstJoin);
-        ScriptTools.exportContract(mainnet.name, "daiNst",  mainnet.nstInstance.daiNst);
-        ScriptTools.exportContract(mainnet.name, "sNst",    mainnet.snstInstance.sNst);
-        ScriptTools.exportContract(mainnet.name, "sNstImp", mainnet.snstInstance.sNstImp);
+        ScriptTools.exportContract(mainnet.name, "usds",     mainnet.usdsInstance.usds);
+        ScriptTools.exportContract(mainnet.name, "usdsImp",  mainnet.usdsInstance.usdsImp);
+        ScriptTools.exportContract(mainnet.name, "usdsJoin", mainnet.usdsInstance.usdsJoin);
+        ScriptTools.exportContract(mainnet.name, "daiUsds",  mainnet.usdsInstance.daiUsds);
+        ScriptTools.exportContract(mainnet.name, "sUsds",    mainnet.susdsInstance.sUsds);
+        ScriptTools.exportContract(mainnet.name, "sUsdsImp", mainnet.susdsInstance.sUsdsImp);
     }
 
     function setupAllocationSystem() internal {
@@ -284,7 +284,7 @@ contract SetupAll is Script {
             mainnet.admin,
             mainnet.allocatorSharedInstance.roles,
             mainnet.config.readString(".ilk").stringToBytes32(),
-            mainnet.nstInstance.nstJoin
+            mainnet.usdsInstance.usdsJoin
         );
 
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
@@ -352,20 +352,20 @@ contract SetupAll is Script {
 
         mainnet.almProxy = new ALMProxy(Ethereum.SPARK_PROXY);
         mainnet.almController = new MainnetController({
-            admin_  : Ethereum.SPARK_PROXY,
-            proxy_  : address(mainnet.almProxy),
-            vault_  : mainnet.allocatorIlkInstance.vault,
-            buffer_ : mainnet.allocatorIlkInstance.buffer,
-            psm_    : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
-            daiNst_ : mainnet.nstInstance.daiNst,
-            cctp_   : mainnet.config.readAddress(".cctpTokenMessenger"),
-            snst_   : mainnet.snstInstance.sNst
+            admin_   : Ethereum.SPARK_PROXY,
+            proxy_   : address(mainnet.almProxy),
+            vault_   : mainnet.allocatorIlkInstance.vault,
+            buffer_  : mainnet.allocatorIlkInstance.buffer,
+            psm_     : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
+            daiUsds_ : mainnet.usdsInstance.daiUsds,
+            cctp_    : mainnet.config.readAddress(".cctpTokenMessenger"),
+            susds_   : mainnet.susdsInstance.sUsds
         });
 
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
             abi.encodeCall(mainnet.spell.initALMController, (
                 address(mainnet.spell),
-                mainnet.nstInstance,
+                mainnet.usdsInstance,
                 mainnet.allocatorIlkInstance,
                 mainnet.almProxy,
                 mainnet.almController,
@@ -380,16 +380,16 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
-    // Deploy an instance of NST which will closely resemble the L2 versions of the tokens
+    // Deploy an instance of USDS which will closely resemble the L2 versions of the tokens
     // TODO: This should be replaced by the actual tokens when they are available
-    function deployNstInstance(
+    function deployUsdsInstance(
         address _deployer,
         address _owner
-    ) internal returns (Nst instance, address implementation) {
-        address _nstImp = address(new Nst());
-        address _nst = address((new ERC1967Proxy(_nstImp, abi.encodeCall(Nst.initialize, ()))));
-        ScriptTools.switchOwner(_nst, _deployer, _owner);
-        return (Nst(_nst), _nstImp);
+    ) internal returns (Usds instance, address implementation) {
+        address _usdsImp = address(new Usds());
+        address _usds = address((new ERC1967Proxy(_usdsImp, abi.encodeCall(Usds.initialize, ()))));
+        ScriptTools.switchOwner(_usds, _deployer, _owner);
+        return (Usds(_usds), _usdsImp);
     }
 
     function setupOpStackTokenBridge(OpStackForeignDomain storage domain) internal {
@@ -435,8 +435,8 @@ contract SetupAll is Script {
             l2CrossDomain
         );
 
-        (domain.nst, domain.nstImp)   = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
-        (domain.snst, domain.snstImp) = deployNstInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.usds, domain.usdsImp)   = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.susds, domain.susdsImp) = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
 
         vm.stopBroadcast();
 
@@ -447,12 +447,12 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         address[] memory l1Tokens = new address[](2);
-        l1Tokens[0] = mainnet.nstInstance.nst;
-        l1Tokens[1] = mainnet.snstInstance.sNst;
+        l1Tokens[0] = mainnet.usdsInstance.usds;
+        l1Tokens[1] = mainnet.susdsInstance.sUsds;
 
         address[] memory l2Tokens = new address[](2);
-        l2Tokens[0] = address(domain.nst);
-        l2Tokens[1] = address(domain.snst);
+        l2Tokens[0] = address(domain.usds);
+        l2Tokens[1] = address(domain.susds);
 
         string memory clPrefix = domain.config.readString(".chainlogPrefix");
 
@@ -476,10 +476,10 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(domain.name, "nst",           address(domain.nst));
-        ScriptTools.exportContract(domain.name, "nstImp",        domain.nstImp);
-        ScriptTools.exportContract(domain.name, "sNst",          address(domain.snst));
-        ScriptTools.exportContract(domain.name, "sNstImp",       domain.snstImp);
+        ScriptTools.exportContract(domain.name, "usds",          address(domain.usds));
+        ScriptTools.exportContract(domain.name, "usdsImp",       domain.usdsImp);
+        ScriptTools.exportContract(domain.name, "sUsds",         address(domain.susds));
+        ScriptTools.exportContract(domain.name, "sUsdsImp",      domain.susdsImp);
         ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1BridgeInstance.bridge);
@@ -492,7 +492,7 @@ contract SetupAll is Script {
 
         address expectedReceiver = vm.computeCreateAddress(deployer, 2);
         if (domain.name.eq("base")) {
-            domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.snstInstance.sNst), expectedReceiver));
+            domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.susdsInstance.sUsds), expectedReceiver));
         } else {
             revert("Unsupported domain");
         }
@@ -515,8 +515,8 @@ contract SetupAll is Script {
 
         domain.psm = new PSM3(
             domain.config.readAddress(".usdc"),
-            address(domain.nst),
-            address(domain.snst),
+            address(domain.usds),
+            address(domain.susds),
             address(domain.dsrOracle)
         );
 
@@ -552,9 +552,9 @@ contract SetupAll is Script {
             admin_ : msg.sender,
             proxy_ : address(domain.almProxy),
             psm_   : address(domain.psm),
-            nst_   : address(domain.nst),
+            usds_  : address(domain.usds),
             usdc_  : domain.config.readAddress(".usdc"),
-            snst_  : address(domain.snst),
+            susds_ : address(domain.susds),
             cctp_  : domain.config.readAddress(".cctpTokenMessenger")
         });
 
