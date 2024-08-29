@@ -2,27 +2,48 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
+import { ScriptTools }       from "lib/dss-test/src/ScriptTools.sol";
 import { MainnetController } from "lib/spark-alm-controller/src/MainnetController.sol";
+import { IERC20 }            from "lib/forge-std/src/interfaces/IERC20.sol";
+import { Usds }              from "lib/usds/src/Usds.sol";
+import { ALMProxy }          from "lib/spark-alm-controller/src/ALMProxy.sol";
+
 
 contract SetupAllMainetTest is Test {
     MainnetController mainnetController;
-
-    // @todo: automatically read from script output
-    address public constant MAINNET_CONTROLLER_ADDRESS = 0x271647acC35113e9FEFbDcb230d8aCf4453FF876;
-    address public constant SAFE_ADDRESS = 0x42dDF1269E1E1eA5D3549296B9f9A9AFcFd2bc68;
+    ALMProxy almProxy;
+    Usds usds;
+    address safe;
 
     function setUp() public {
-        mainnetController = MainnetController(MAINNET_CONTROLLER_ADDRESS);
+        vm.setEnv("FOUNDRY_ROOT_CHAINID", "1");
+
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
+        string memory output = ScriptTools.readOutput("mainnet");
+        
+        mainnetController = MainnetController(stdJson.readAddress(output, ".almController"));
+        almProxy = ALMProxy(stdJson.readAddress(output, ".almProxy"));
+        usds = Usds(stdJson.readAddress(output, ".usds"));
+        safe = stdJson.readAddress(output, ".safe");
     }
 
     function test_permissions() view public {
-        assertTrue(mainnetController.hasRole(mainnetController.RELAYER(), SAFE_ADDRESS));
+        assertTrue(mainnetController.hasRole(mainnetController.RELAYER(), safe));
     }
 
     function test_swap_usdc() public {
-        vm.prank(SAFE_ADDRESS);
+        IERC20 usdc = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+        address usdc_whale = 0x4B16c5dE96EB2117bBE5fd171E4d203624B014aa;
+        uint256 usdcValue = 1_000_000;
+        uint256 expectedUsdsValue = 1e18;
 
-        // @todo: will require USDC balance first
-        mainnetController.swapUSDCToNST(10);
+        vm.prank(usdc_whale);
+        usdc.transfer(address(almProxy), usdcValue);
+
+        vm.prank(safe);
+        mainnetController.swapUSDCToUSDS(usdcValue);
+
+        assertEq(usdc.balanceOf(address(almProxy)), 0);
+        assertEq(usds.balanceOf(address(almProxy)), expectedUsdsValue);
     }
 }
