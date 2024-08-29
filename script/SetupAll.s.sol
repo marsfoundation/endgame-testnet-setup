@@ -193,7 +193,9 @@ contract SetupAll is Script {
 
         // L2 versions of the tokens
         Usds usds;
+        address usdsImp;
         Usds susds;
+        address susdsImp;
 
         // Token Bridge
         L1TokenBridgeInstance l1BridgeInstance;
@@ -383,12 +385,11 @@ contract SetupAll is Script {
     function deployUsdsInstance(
         address _deployer,
         address _owner
-    ) internal returns (Usds instance) {
+    ) internal returns (Usds instance, address implementation) {
         address _usdsImp = address(new Usds());
         address _usds = address((new ERC1967Proxy(_usdsImp, abi.encodeCall(Usds.initialize, ()))));
         ScriptTools.switchOwner(_usds, _deployer, _owner);
-
-        return Usds(_usds);
+        return (Usds(_usds), _usdsImp);
     }
 
     function setupOpStackTokenBridge(OpStackForeignDomain storage domain) internal {
@@ -434,8 +435,8 @@ contract SetupAll is Script {
             l2CrossDomain
         );
 
-        domain.usds  = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
-        domain.susds = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.usds, domain.usdsImp)   = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.susds, domain.susdsImp) = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
 
         vm.stopBroadcast();
 
@@ -476,7 +477,9 @@ contract SetupAll is Script {
         vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "usds",          address(domain.usds));
+        ScriptTools.exportContract(domain.name, "usdsImp",       domain.usdsImp);
         ScriptTools.exportContract(domain.name, "sUsds",         address(domain.susds));
+        ScriptTools.exportContract(domain.name, "sUsdsImp",      domain.susdsImp);
         ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1BridgeInstance.bridge);
