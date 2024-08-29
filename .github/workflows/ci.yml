@@ -23,3 +23,28 @@ jobs:
         run: |
           forge --version
           forge build --sizes
+
+      - name: Start anvils and set balances
+        run: |
+          anvil -f $MAINNET_RPC_URL -p 8545 --auto-impersonate&
+          anvil -f $BASE_RPC_URL -p 8546 --auto-impersonate&
+          sleep 1 # wait for the anvils to start
+        env:
+          MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+
+      - name: Execute setup script
+        run: |
+          cast rpc --rpc-url="$MAINNET_RPC_URL" anvil_setBalance $EXECUTOR `cast to-wei 1000 | cast to-hex`
+          cast rpc --rpc-url="$BASE_RPC_URL" anvil_setBalance $EXECUTOR `cast to-wei 1000 | cast to-hex`
+          forge script script/SetupAll.s.sol:SetupAll --broadcast --multi --unlocked --sender $EXECUTOR
+        env:
+          MAINNET_RPC_URL: "http://localhost:8545"
+          BASE_RPC_URL: "http://localhost:8546"
+          EXECUTOR: "0xbE286431454714F511008713973d3B053A2d38f3"
+
+      - name: Sanity checks
+        run: forge test
+        env:
+          MAINNET_RPC_URL: "http://localhost:8545"
+          BASE_RPC_URL: "http://localhost:8546"
