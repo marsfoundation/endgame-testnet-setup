@@ -46,4 +46,24 @@ contract SetupAllMainetTest is Test {
         assertEq(usdc.balanceOf(address(almProxy)), 0);
         assertEq(usds.balanceOf(address(almProxy)), expectedUsdsValue);
     }
+
+    function test_mintUSDS() public {
+        uint256 usdsValue = 1e18;
+
+        vm.prank(safe);
+        mainnetController.mintUSDS(usdsValue);
+
+        assertEq(usds.balanceOf(address(almProxy)), usdsValue);
+    }
+
+    function test_burn_usds() public {
+        uint256 usdsValue = 1e18;
+        vm.prank(safe);
+        mainnetController.mintUSDS(usdsValue);
+        
+        vm.prank(safe);
+        mainnetController.burnUSDS(usdsValue+1000);
+
+        assertEq(usds.balanceOf(address(almProxy)), 0);
+    }
 }
