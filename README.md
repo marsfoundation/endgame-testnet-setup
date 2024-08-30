@@ -4,14 +4,14 @@ A single script which will setup all contracts on Mainnet and Base from forks to
 
 Deploys and configures:
 
- * NST
- * sNST
+ * USDS
+ * sUSDS
  * Allocation System Core
  * Spark ALM Controller
  * Maker L2 Cross-chain Governance
- * Token Bridge with NST + sNST Support
- * L2 sNST Exchange Rate Oracle
- * L2 PSM with Native USDC, NST and sNST swaps supported
+ * Token Bridge with USDS + sUSDS Support
+ * L2 sUSDS Exchange Rate Oracle
+ * L2 PSM with Native USDC, USDS and sUSDS swaps supported
 
 
 Contracts will be kept in line with latest available, so new mainnet fork testnets can be spun up easily.
