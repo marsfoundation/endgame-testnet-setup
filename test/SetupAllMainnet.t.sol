@@ -33,12 +33,10 @@ contract SetupAllMainetTest is Test {
 
     function test_swap_usdc() public {
         IERC20 usdc = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-        address usdc_whale = 0x4B16c5dE96EB2117bBE5fd171E4d203624B014aa;
         uint256 usdcValue = 1_000_000;
         uint256 expectedUsdsValue = 1e18;
 
-        vm.prank(usdc_whale);
-        usdc.transfer(address(almProxy), usdcValue);
+        deal(address(usdc), address(almProxy), usdcValue);
 
         vm.prank(safe);
         mainnetController.swapUSDCToUSDS(usdcValue);
