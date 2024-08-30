@@ -62,7 +62,7 @@ contract SetupAllMainetTest is Test {
         mainnetController.mintUSDS(usdsValue);
         
         vm.prank(safe);
-        mainnetController.burnUSDS(usdsValue+1000);
+        mainnetController.burnUSDS(usdsValue);
 
         assertEq(usds.balanceOf(address(almProxy)), 0);
     }
