@@ -46,3 +46,6 @@
 [submodule "lib/endgame-toolkit"]
 	path = lib/endgame-toolkit
 	url = https://github.com/makerdao/endgame-toolkit
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/openzeppelin/openzeppelin-contracts
