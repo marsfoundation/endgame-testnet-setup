@@ -167,7 +167,9 @@ contract SetupMainnetSpell {
     function initFarms(
         Sky sky,
         DssVestMintable vest,
-        VestedRewardsDistribution skyFarmDistribution
+        VestedRewardsDistribution skyFarmDistribution,
+        uint256 total,
+        uint256 duration
     ) external {
         // Mint authorization on vest
         sky.rely(address(vest));
@@ -178,9 +180,9 @@ contract SetupMainnetSpell {
         // Activate the SKY/USDS farm
         uint256 vestId = vest.create({
             _usr: address(skyFarmDistribution),
-            _tot: 2_000_000e18,
+            _tot: total,
             _bgn: block.timestamp,
-            _tau: 90 days,
+            _tau: duration,
             _eta: 0,
             _mgr: address(0)
         });
@@ -287,7 +289,7 @@ contract SetupAll is Script {
         vm.broadcast();
         domain.spell    = new SetupMainnetSpell();
 
-        ScriptTools.exportContract(mainnet.name, "spell", address(domain.spell));
+        ScriptTools.exportContract(domain.name, "spell", address(domain.spell));
     }
 
     function createOpStackForeignDomain(string memory name) internal returns (OpStackForeignDomain memory domain) {
@@ -459,7 +461,9 @@ contract SetupAll is Script {
             abi.encodeCall(mainnet.spell.initFarms, (
                 Sky(mainnet.skyInstance.sky),
                 mainnet.vest,
-                mainnet.skyFarmDistribution
+                mainnet.skyFarmDistribution,
+                mainnet.config.readUint(".skyFarmTotal") * 1e18,
+                mainnet.config.readUint(".skyFarmDuration")
             ))
         );
 
