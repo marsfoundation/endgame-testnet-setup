@@ -53,6 +53,10 @@ import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/Token
 
 import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
+import { Sky }                    from "lib/sky/src/Sky.sol";
+import { SkyDeploy, SkyInstance } from "lib/sky/deploy/SkyDeploy.sol";
+import { SkyInit }                from "lib/sky/deploy/SkyInit.sol";
+
 import { DssVestMintable } from "src/DssVest.sol";
 
 interface ISparkProxy {
@@ -71,7 +75,9 @@ contract SetupMainnetSpell {
     function initTokens(
         DssInstance memory dss,
         UsdsInstance memory usdsInstance,
-        SUsdsInstance memory susdsInstance
+        SUsdsInstance memory susdsInstance,
+        SkyInstance memory skyInstance,
+        uint256 mkrSkyRate
     ) external {
         UsdsInit.init(dss, usdsInstance);
         SUsdsInit.init(dss, susdsInstance, SUsdsConfig({
@@ -79,6 +85,7 @@ contract SetupMainnetSpell {
             usds:     usdsInstance.usds,
             ssr:      DSR_INITIAL_RATE
         }));
+        SkyInit.init(dss, skyInstance, mkrSkyRate);
     }
 
     function initAllocator(
@@ -183,6 +190,7 @@ contract SetupAll is Script {
         // New tokens
         UsdsInstance  usdsInstance;
         SUsdsInstance susdsInstance;
+        SkyInstance   skyInstance;
 
         // Allocation system
         AllocatorSharedInstance allocatorSharedInstance;
@@ -227,6 +235,8 @@ contract SetupAll is Script {
     using stdJson for string;
     using ScriptTools for string;
 
+    uint256 constant MKR_SKY_CONVERSION_RATE = 24_000;
+
     EthereumDomain mainnet;
 
     OpStackForeignDomain base;
@@ -262,13 +272,16 @@ contract SetupAll is Script {
         // Deploy phase
         mainnet.usdsInstance  = UsdsDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
         mainnet.susdsInstance = SUsdsDeploy.deploy(deployer, mainnet.admin, mainnet.usdsInstance.usdsJoin);
+        mainnet.skyInstance   = SkyDeploy.deploy(deployer, mainnet.admin, domain.chainlog.getAddress("MCD_GOV"), MKR_SKY_CONVERSION_RATE);
 
         // Initialization phase (needs executing as pause proxy owner)
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
             abi.encodeCall(mainnet.spell.initTokens, (
                 mainnet.dss,
                 mainnet.usdsInstance,
-                mainnet.susdsInstance
+                mainnet.susdsInstance,
+                mainnet.skyInstance,
+                MKR_SKY_CONVERSION_RATE
             ))
         );
 
@@ -280,6 +293,8 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "daiUsds",  mainnet.usdsInstance.daiUsds);
         ScriptTools.exportContract(mainnet.name, "sUsds",    mainnet.susdsInstance.sUsds);
         ScriptTools.exportContract(mainnet.name, "sUsdsImp", mainnet.susdsInstance.sUsdsImp);
+        ScriptTools.exportContract(mainnet.name, "sky",      mainnet.skyInstance.sky);
+        ScriptTools.exportContract(mainnet.name, "mkrSky",   mainnet.skyInstance.mkrSky);
     }
 
     function setupAllocationSystem() internal {
@@ -395,6 +410,18 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         DssVestMintable vest = new DssVestMintable(address(mainnet.skyInstance.sky));
+
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initFarms, (
+                address(mainnet.spell),
+                mainnet.usdsInstance,
+                mainnet.allocatorIlkInstance,
+                mainnet.almProxy,
+                mainnet.almController,
+                mainnet.config.readAddress(".freezer"),
+                mainnet.safe
+            ))
+        );
 
         vm.stopBroadcast();
 
