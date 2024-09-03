@@ -53,7 +53,7 @@ import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/Token
 
 import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
-import { DssVest } from "src/DssVest.sol";
+import { DssVestMintable } from "src/DssVest.sol";
 
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
@@ -389,6 +389,18 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
+    function setupFarms() internal {
+        vm.selectFork(mainnet.forkId);
+
+        vm.startBroadcast();
+
+        DssVestMintable vest = new DssVestMintable(address(mainnet.skyInstance.sky));
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(mainnet.name, "vest", address(vest));
+    }
+
     // Deploy an instance of USDS which will closely resemble the L2 versions of the tokens
     // TODO: This should be replaced by the actual tokens when they are available
     function deployUsdsInstance(
@@ -597,6 +609,7 @@ contract SetupAll is Script {
         setupAllocationSystem();
         setupSafe();
         setupALMController();
+        setupFarms();
 
         setupOpStackTokenBridge(base);
         setupOpStackCrossChainDSROracle(base);
