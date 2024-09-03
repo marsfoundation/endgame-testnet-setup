@@ -7,7 +7,9 @@ fs_permissions = [
     { access = "read-write", path = "./script/output/"}
 ]
 remappings = [
-    "openzeppelin-contracts/=openzeppelin-contracts/contracts/"
+    "openzeppelin-contracts/security/=lib/openzeppelin-contracts/contracts/utils/",
+    "openzeppelin-contracts/contracts/=lib/openzeppelin-contracts/contracts/",
+    "openzeppelin-contracts/token/=lib/openzeppelin-contracts/contracts/token/"
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

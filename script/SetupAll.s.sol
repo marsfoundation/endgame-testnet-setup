@@ -167,11 +167,13 @@ contract SetupMainnetSpell {
     function initFarms(
         Sky sky,
         DssVestMintable vest,
-        VestedRewardsDistribution skyFarmDistribution,
-        StakingRewards skyFarmRewards
+        VestedRewardsDistribution skyFarmDistribution
     ) external {
         // Mint authorization on vest
         sky.rely(address(vest));
+
+        // Setup the vest cap
+        vest.file("cap", type(uint256).max);
 
         // Activate the SKY/USDS farm
         uint256 vestId = vest.create({
@@ -302,7 +304,7 @@ contract SetupAll is Script {
         // Deploy phase
         mainnet.usdsInstance  = UsdsDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
         mainnet.susdsInstance = SUsdsDeploy.deploy(deployer, mainnet.admin, mainnet.usdsInstance.usdsJoin);
-        mainnet.skyInstance   = SkyDeploy.deploy(deployer, mainnet.admin, domain.chainlog.getAddress("MCD_GOV"), MKR_SKY_CONVERSION_RATE);
+        mainnet.skyInstance   = SkyDeploy.deploy(deployer, mainnet.admin, mainnet.chainlog.getAddress("MCD_GOV"), MKR_SKY_CONVERSION_RATE);
 
         // Initialization phase (needs executing as pause proxy owner)
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
@@ -441,7 +443,7 @@ contract SetupAll is Script {
 
         // Vest
         mainnet.vest = new DssVestMintable(address(mainnet.skyInstance.sky));
-        ScriptTools.switchOwner(address(vest), deployer, mainnet.admin);
+        ScriptTools.switchOwner(address(mainnet.vest), deployer, mainnet.admin);
 
         // SKY mainnet farm
         mainnet.skyFarmRewards = new StakingRewards(
@@ -450,15 +452,14 @@ contract SetupAll is Script {
             address(mainnet.skyInstance.sky),
             address(mainnet.usdsInstance.usds)
         );
-        mainnet.skyFarmDistribution = new VestedRewardsDistribution(address(vest), address(mainnet.skyFarmRewards));
+        mainnet.skyFarmDistribution = new VestedRewardsDistribution(address(mainnet.vest), address(mainnet.skyFarmRewards));
         ScriptTools.switchOwner(address(mainnet.skyFarmDistribution), deployer, mainnet.admin);
 
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
             abi.encodeCall(mainnet.spell.initFarms, (
-                mainnet.skyInstance.sky,
+                Sky(mainnet.skyInstance.sky),
                 mainnet.vest,
-                mainnet.skyFarmDistribution,
-                mainnet.skyFarmRewards
+                mainnet.skyFarmDistribution
             ))
         );
 
