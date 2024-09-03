@@ -53,6 +53,8 @@ import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/Token
 
 import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
+import { DssVest } from "src/DssVest.sol";
+
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
 }
