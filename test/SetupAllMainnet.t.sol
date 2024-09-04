@@ -11,6 +11,7 @@ import { IERC20 }      from "lib/forge-std/src/interfaces/IERC20.sol";
 
 import { Usds } from "lib/usds/src/Usds.sol";
 import { Sky }  from "lib/sky/src/Sky.sol";
+import { SDAO } from "lib/endgame-toolkit/src/SDAO.sol";
 
 import { MainnetController } from "lib/spark-alm-controller/src/MainnetController.sol";
 import { ALMProxy }          from "lib/spark-alm-controller/src/ALMProxy.sol";
@@ -28,6 +29,7 @@ contract SetupAllMainetTest is Test {
 
     Usds   usds;
     Sky    sky;
+    SDAO   spk;
     IERC20 usdc;
 
     address safe;
@@ -35,7 +37,8 @@ contract SetupAllMainetTest is Test {
     MainnetController mainnetController;
     ALMProxy almProxy;
 
-    DssVest vest;
+    DssVest skyVest;
+    DssVest spkVest;
 
     function setUp() public {
         vm.setEnv("FOUNDRY_ROOT_CHAINID", "1");
@@ -45,6 +48,7 @@ contract SetupAllMainetTest is Test {
 
         usds = Usds(output.readAddress(".usds"));
         sky  = Sky(output.readAddress(".sky"));
+        spk  = SDAO(output.readAddress(".spk"));
         usdc = IERC20(Ethereum.USDC);
 
         safe = output.readAddress(".safe");
@@ -52,7 +56,8 @@ contract SetupAllMainetTest is Test {
         mainnetController = MainnetController(output.readAddress(".almController"));
         almProxy          = ALMProxy(output.readAddress(".almProxy"));
 
-        vest = DssVest(output.readAddress(".vest"));
+        skyVest = DssVest(output.readAddress(".skyVest"));
+        spkVest = DssVest(output.readAddress(".spkVest"));
 
         assertEq(usds.balanceOf(address(almProxy)), 0);
         assertEq(usdc.balanceOf(address(almProxy)), 0);
@@ -103,7 +108,7 @@ contract SetupAllMainetTest is Test {
         usds.approve(address(rewards), 300e18);
 
         // Accrue a bunch of rewards (numbers dont matter that much)
-        vm.warp(vest.bgn(1));
+        vm.warp(skyVest.bgn(1));
         rewards.stake(100e18);
         skip(7 days);
         distribution.distribute();
@@ -128,6 +133,41 @@ contract SetupAllMainetTest is Test {
         
         assertEq(usds.balanceOf(address(this)), 300e18);
         assertEq(sky.balanceOf(address(this)),  amountEarned);
+    }
+
+    function test_spk_farm() public {
+        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".spkFarmDistribution"));
+        StakingRewards rewards = StakingRewards(output.readAddress(".spkFarmRewards"));
+
+        deal(address(usds), address(this), 300e18);
+        usds.approve(address(rewards), 300e18);
+
+        // Accrue a bunch of rewards (numbers dont matter that much)
+        vm.warp(spkVest.bgn(1));
+        rewards.stake(100e18);
+        skip(7 days);
+        distribution.distribute();
+        skip(7 days);
+        rewards.stake(100e18);
+        distribution.distribute();
+        skip(7 days);
+        rewards.stake(100e18);
+        distribution.distribute();
+        skip(7 days);
+        distribution.distribute();
+        
+        uint256 amountEarned = 2_876_712.328767123287280000e18;
+
+        assertEq(rewards.earned(address(this)), amountEarned);
+        assertEq(spk.totalSupply(),             3_835_616.438356164383561643e18);
+        assertEq(usds.balanceOf(address(this)), 0);
+        assertEq(spk.balanceOf(address(this)),  0);
+
+        // Pull my rewards
+        rewards.exit();
+        
+        assertEq(usds.balanceOf(address(this)), 300e18);
+        assertEq(spk.balanceOf(address(this)),  amountEarned);
     }
 
 }
