@@ -9,9 +9,9 @@ Deploys and configures:
  * SKY
  * Allocation System Core
  * Spark ALM Controller
- * SKY Farm on Mainnet
- * Maker L2 Cross-chain Governance
- * Token Bridge with USDS + sUSDS Support
+ * Farms on Mainnet (SKY-USDS, SPK-USDS, SKY-SPK, SPK-SKY)
+ * Sky L2 Cross-chain Governance
+ * L2 Token Bridge
  * L2 sUSDS Exchange Rate Oracle
  * L2 PSM with Native USDC, USDS and sUSDS swaps supported
 
