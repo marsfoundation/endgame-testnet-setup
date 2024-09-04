@@ -6,8 +6,10 @@ Deploys and configures:
 
  * USDS
  * sUSDS
+ * SKY
  * Allocation System Core
  * Spark ALM Controller
+ * SKY Farm on Mainnet
  * Maker L2 Cross-chain Governance
  * Token Bridge with USDS + sUSDS Support
  * L2 sUSDS Exchange Rate Oracle

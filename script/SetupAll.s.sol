@@ -53,6 +53,15 @@ import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/Token
 
 import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
+import { Sky }                    from "lib/sky/src/Sky.sol";
+import { SkyDeploy, SkyInstance } from "lib/sky/deploy/SkyDeploy.sol";
+import { SkyInit }                from "lib/sky/deploy/SkyInit.sol";
+
+import { DssVestMintable } from "src/DssVest.sol";
+
+import { VestedRewardsDistribution } from "lib/endgame-toolkit/src/VestedRewardsDistribution.sol";
+import { StakingRewards }            from "lib/endgame-toolkit/src/synthetix/StakingRewards.sol";
+
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
 }
@@ -69,7 +78,9 @@ contract SetupMainnetSpell {
     function initTokens(
         DssInstance memory dss,
         UsdsInstance memory usdsInstance,
-        SUsdsInstance memory susdsInstance
+        SUsdsInstance memory susdsInstance,
+        SkyInstance memory skyInstance,
+        uint256 mkrSkyRate
     ) external {
         UsdsInit.init(dss, usdsInstance);
         SUsdsInit.init(dss, susdsInstance, SUsdsConfig({
@@ -77,6 +88,7 @@ contract SetupMainnetSpell {
             usds:     usdsInstance.usds,
             ssr:      DSR_INITIAL_RATE
         }));
+        SkyInit.init(dss, skyInstance, mkrSkyRate);
     }
 
     function initAllocator(
@@ -152,6 +164,32 @@ contract SetupMainnetSpell {
         );
     }
 
+    function initFarms(
+        Sky sky,
+        DssVestMintable vest,
+        VestedRewardsDistribution skyFarmDistribution,
+        uint256 total,
+        uint256 duration
+    ) external {
+        // Mint authorization on vest
+        sky.rely(address(vest));
+
+        // Setup the vest cap
+        vest.file("cap", type(uint256).max);
+
+        // Activate the SKY/USDS farm
+        uint256 vestId = vest.create({
+            _usr: address(skyFarmDistribution),
+            _tot: total,
+            _bgn: block.timestamp,
+            _tau: duration,
+            _eta: 0,
+            _mgr: address(0)
+        });
+        vest.restrict(vestId);
+        skyFarmDistribution.file("vestId", vestId);
+    }
+
     function initOpStackTokenBridge(
         DssInstance memory           dss,
         L1TokenBridgeInstance memory l1BridgeInstance,
@@ -181,6 +219,7 @@ contract SetupAll is Script {
         // New tokens
         UsdsInstance  usdsInstance;
         SUsdsInstance susdsInstance;
+        SkyInstance   skyInstance;
 
         // Allocation system
         AllocatorSharedInstance allocatorSharedInstance;
@@ -190,6 +229,11 @@ contract SetupAll is Script {
         address           safe;
         MainnetController almController;
         ALMProxy          almProxy;
+
+        // Farms
+        DssVestMintable           vest;
+        VestedRewardsDistribution skyFarmDistribution;
+        StakingRewards            skyFarmRewards;
     }
 
     struct OpStackForeignDomain {
@@ -225,6 +269,8 @@ contract SetupAll is Script {
     using stdJson for string;
     using ScriptTools for string;
 
+    uint256 constant MKR_SKY_CONVERSION_RATE = 24_000;
+
     EthereumDomain mainnet;
 
     OpStackForeignDomain base;
@@ -243,7 +289,7 @@ contract SetupAll is Script {
         vm.broadcast();
         domain.spell    = new SetupMainnetSpell();
 
-        ScriptTools.exportContract(mainnet.name, "spell", address(domain.spell));
+        ScriptTools.exportContract(domain.name, "spell", address(domain.spell));
     }
 
     function createOpStackForeignDomain(string memory name) internal returns (OpStackForeignDomain memory domain) {
@@ -260,13 +306,16 @@ contract SetupAll is Script {
         // Deploy phase
         mainnet.usdsInstance  = UsdsDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
         mainnet.susdsInstance = SUsdsDeploy.deploy(deployer, mainnet.admin, mainnet.usdsInstance.usdsJoin);
+        mainnet.skyInstance   = SkyDeploy.deploy(deployer, mainnet.admin, mainnet.chainlog.getAddress("MCD_GOV"), MKR_SKY_CONVERSION_RATE);
 
         // Initialization phase (needs executing as pause proxy owner)
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
             abi.encodeCall(mainnet.spell.initTokens, (
                 mainnet.dss,
                 mainnet.usdsInstance,
-                mainnet.susdsInstance
+                mainnet.susdsInstance,
+                mainnet.skyInstance,
+                MKR_SKY_CONVERSION_RATE
             ))
         );
 
@@ -278,6 +327,8 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "daiUsds",  mainnet.usdsInstance.daiUsds);
         ScriptTools.exportContract(mainnet.name, "sUsds",    mainnet.susdsInstance.sUsds);
         ScriptTools.exportContract(mainnet.name, "sUsdsImp", mainnet.susdsInstance.sUsdsImp);
+        ScriptTools.exportContract(mainnet.name, "sky",      mainnet.skyInstance.sky);
+        ScriptTools.exportContract(mainnet.name, "mkrSky",   mainnet.skyInstance.mkrSky);
     }
 
     function setupAllocationSystem() internal {
@@ -385,6 +436,42 @@ contract SetupAll is Script {
 
         ScriptTools.exportContract(mainnet.name, "almProxy",      address(mainnet.almProxy));
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
+    }
+
+    function setupFarms() internal {
+        vm.selectFork(mainnet.forkId);
+
+        vm.startBroadcast();
+
+        // Vest
+        mainnet.vest = new DssVestMintable(address(mainnet.skyInstance.sky));
+        ScriptTools.switchOwner(address(mainnet.vest), deployer, mainnet.admin);
+
+        // SKY mainnet farm
+        mainnet.skyFarmRewards = new StakingRewards(
+            mainnet.admin,
+            vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1),
+            address(mainnet.skyInstance.sky),
+            address(mainnet.usdsInstance.usds)
+        );
+        mainnet.skyFarmDistribution = new VestedRewardsDistribution(address(mainnet.vest), address(mainnet.skyFarmRewards));
+        ScriptTools.switchOwner(address(mainnet.skyFarmDistribution), deployer, mainnet.admin);
+
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initFarms, (
+                Sky(mainnet.skyInstance.sky),
+                mainnet.vest,
+                mainnet.skyFarmDistribution,
+                mainnet.config.readUint(".skyFarmTotal") * 1e18,
+                mainnet.config.readUint(".skyFarmDuration")
+            ))
+        );
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(mainnet.name, "vest",                address(mainnet.vest));
+        ScriptTools.exportContract(mainnet.name, "skyFarmDistribution", address(mainnet.skyFarmDistribution));
+        ScriptTools.exportContract(mainnet.name, "skyFarmRewards",      address(mainnet.skyFarmRewards));
     }
 
     // Deploy an instance of USDS which will closely resemble the L2 versions of the tokens
@@ -595,6 +682,7 @@ contract SetupAll is Script {
         setupAllocationSystem();
         setupSafe();
         setupALMController();
+        setupFarms();
 
         setupOpStackTokenBridge(base);
         setupOpStackCrossChainDSROracle(base);

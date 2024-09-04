@@ -40,3 +40,12 @@
 [submodule "lib/usds"]
 	path = lib/usds
 	url = https://github.com/makerdao/usds
+[submodule "lib/sky"]
+	path = lib/sky
+	url = https://github.com/makerdao/sky
+[submodule "lib/endgame-toolkit"]
+	path = lib/endgame-toolkit
+	url = https://github.com/makerdao/endgame-toolkit
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/openzeppelin/openzeppelin-contracts
