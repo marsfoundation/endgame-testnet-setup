@@ -42,7 +42,7 @@ import { MainnetController } from "lib/spark-alm-controller/src/MainnetControlle
 
 import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
 import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
-import { DSRAuthOracle }               from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
+import { DSRAuthOracle, IDSROracle }   from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
 
 import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
 
@@ -724,6 +724,14 @@ contract SetupAll is Script {
         domain.dsrOracle   = new DSRAuthOracle();
         domain.dsrReceiver = new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle));
         domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
+        // FIXME: this is being set manually, but needs to be initialized for real when in production
+        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
+        domain.dsrOracle.setPotData(IDSROracle.PotData({
+            dsr: 1e27,
+            chi: 1e27,
+            rho: uint40(block.timestamp)
+        }));
+        domain.dsrOracle.revokeRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
 
         vm.stopBroadcast();
 
