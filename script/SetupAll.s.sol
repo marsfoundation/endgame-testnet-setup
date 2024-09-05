@@ -5,14 +5,14 @@ import { Script }  from "forge-std/Script.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 
 import { Safe }                        from "lib/safe-smart-account/contracts/Safe.sol";
-import { SafeProxyFactory, SafeProxy } from "lib/safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
+import { SafeProxyFactory } from "lib/safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 
 import { MCD, DssInstance } from "lib/dss-test/src/DssTest.sol";
 import { ScriptTools }      from "lib/dss-test/src/ScriptTools.sol";
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import { ChainlogAbstract, DSPauseProxyAbstract } from "lib/dss-interfaces/src/Interfaces.sol";
+import { ChainlogAbstract, DSPauseProxyAbstract, WardsAbstract } from "lib/dss-interfaces/src/Interfaces.sol";
 
 import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
@@ -42,7 +42,7 @@ import { MainnetController } from "lib/spark-alm-controller/src/MainnetControlle
 
 import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
 import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
-import { DSRAuthOracle }               from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
+import { DSRAuthOracle, IDSROracle }   from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
 
 import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
 
@@ -57,10 +57,16 @@ import { Sky }                    from "lib/sky/src/Sky.sol";
 import { SkyDeploy, SkyInstance } from "lib/sky/deploy/SkyDeploy.sol";
 import { SkyInit }                from "lib/sky/deploy/SkyInit.sol";
 
-import { DssVestMintable } from "src/DssVest.sol";
+import { DssVest, DssVestMintable } from "src/DssVest.sol";
 
 import { VestedRewardsDistribution } from "lib/endgame-toolkit/src/VestedRewardsDistribution.sol";
 import { StakingRewards }            from "lib/endgame-toolkit/src/synthetix/StakingRewards.sol";
+import { SDAO }                      from "lib/endgame-toolkit/src/SDAO.sol";
+
+import { FarmProxyDeploy }                from "lib/op-farms/deploy/FarmProxyDeploy.sol";
+import { FarmProxyInit, ProxiesConfig }   from "lib/op-farms/deploy/FarmProxyInit.sol";
+import { L1FarmProxy }                    from "lib/op-farms/src/L1FarmProxy.sol";
+import { L2FarmProxy }                    from "lib/op-farms/src/L2FarmProxy.sol";
 
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
@@ -68,6 +74,96 @@ interface ISparkProxy {
 
 interface ILitePSM {
     function kiss(address usr) external;
+}
+
+struct EthereumDomain {
+    string  name;
+    string  config;
+    uint256 forkId;
+    address admin;
+
+    // MCD
+    ChainlogAbstract chainlog;
+    DssInstance      dss;
+
+    // Init spell
+    SetupMainnetSpell spell;
+
+    // New tokens
+    UsdsInstance  usdsInstance;
+    SUsdsInstance susdsInstance;
+    SkyInstance   skyInstance;
+    SDAO          spk;
+
+    // Allocation system
+    AllocatorSharedInstance allocatorSharedInstance;
+    AllocatorIlkInstance    allocatorIlkInstance;
+
+    // ALM Controller
+    address           safe;
+    MainnetController almController;
+    ALMProxy          almProxy;
+
+    // Farms
+    DssVest skyVest;
+    DssVest spkVest;
+    Farm    skyUsdsFarm;
+    Farm    spkUsdsFarm;
+    Farm    skySpkFarm;
+    Farm    spkSkyFarm;
+}
+
+struct OpStackForeignDomain {
+    string  name;
+    string  config;
+    uint256 forkId;
+    address admin;
+
+    // L2 versions of the tokens
+    Usds    usds;
+    address usdsImp;
+    Usds    susds;
+    address susdsImp;
+    Sky     sky;
+    SDAO    spk;
+
+    // Token Bridge
+    L1TokenBridgeInstance l1BridgeInstance;
+    L2TokenBridgeInstance l2BridgeInstance;
+
+    // ALM Controller
+    address           safe;
+    ForeignController almController;
+    ALMProxy          almProxy;
+
+    // PSM
+    PSM3 psm;
+
+    // XChain DSR Oracle
+    address          dsrForwarder;  // On Mainnet
+    OptimismReceiver dsrReceiver;
+    DSRAuthOracle    dsrOracle;
+
+    // Farms
+    OpStackFarm skyUsdsFarm;
+    OpStackFarm spkUsdsFarm;
+    OpStackFarm skySpkFarm;
+    OpStackFarm spkSkyFarm;
+}
+
+struct Farm {
+    DssVest                   vest;
+    StakingRewards            rewards;
+    VestedRewardsDistribution distribution;
+}
+
+struct OpStackFarm {
+    DssVest                   vest;
+    StakingRewards            rewards;
+    VestedRewardsDistribution distribution;
+    L1FarmProxy               l1Proxy;
+    L2FarmProxy               l2Proxy;
+    address                   l2Spell;
 }
 
 contract SetupMainnetSpell {
@@ -164,30 +260,29 @@ contract SetupMainnetSpell {
         );
     }
 
-    function initFarms(
-        Sky sky,
-        DssVestMintable vest,
-        VestedRewardsDistribution skyFarmDistribution,
+    function initVest(
+        DssVest vest,
+        address token
+    ) external {
+        vest.file("cap", type(uint256).max);
+        WardsAbstract(token).rely(address(vest));
+    }
+
+    function initFarm(
+        Farm memory farm,
         uint256 total,
         uint256 duration
     ) external {
-        // Mint authorization on vest
-        sky.rely(address(vest));
-
-        // Setup the vest cap
-        vest.file("cap", type(uint256).max);
-
-        // Activate the SKY/USDS farm
-        uint256 vestId = vest.create({
-            _usr: address(skyFarmDistribution),
+        uint256 vestId = farm.vest.create({
+            _usr: address(farm.distribution),
             _tot: total,
             _bgn: block.timestamp,
             _tau: duration,
             _eta: 0,
             _mgr: address(0)
         });
-        vest.restrict(vestId);
-        skyFarmDistribution.file("vestId", vestId);
+        farm.vest.restrict(vestId);
+        farm.distribution.file("vestId", vestId);
     }
 
     function initOpStackTokenBridge(
@@ -199,72 +294,25 @@ contract SetupMainnetSpell {
         TokenBridgeInit.initBridges(dss, l1BridgeInstance, l2BridgeInstance, cfg);
     }
 
+    function initOpStackFarm(
+        DssInstance memory dss,
+        OpStackForeignDomain memory domain,
+        OpStackFarm memory farm,
+        ProxiesConfig memory cfg
+    ) external {
+        FarmProxyInit.initProxies(
+            dss,
+            domain.l1BridgeInstance.govRelay,
+            address(farm.l1Proxy),
+            address(farm.l2Proxy),
+            farm.l2Spell,
+            cfg
+        );
+    }
+
 }
 
 contract SetupAll is Script {
-
-    struct EthereumDomain {
-        string  name;
-        string  config;
-        uint256 forkId;
-        address admin;
-
-        // MCD
-        ChainlogAbstract chainlog;
-        DssInstance      dss;
-
-        // Init spell
-        SetupMainnetSpell spell;
-
-        // New tokens
-        UsdsInstance  usdsInstance;
-        SUsdsInstance susdsInstance;
-        SkyInstance   skyInstance;
-
-        // Allocation system
-        AllocatorSharedInstance allocatorSharedInstance;
-        AllocatorIlkInstance    allocatorIlkInstance;
-
-        // ALM Controller
-        address           safe;
-        MainnetController almController;
-        ALMProxy          almProxy;
-
-        // Farms
-        DssVestMintable           vest;
-        VestedRewardsDistribution skyFarmDistribution;
-        StakingRewards            skyFarmRewards;
-    }
-
-    struct OpStackForeignDomain {
-        string  name;
-        string  config;
-        uint256 forkId;
-        address admin;
-
-        // L2 versions of the tokens
-        Usds usds;
-        address usdsImp;
-        Usds susds;
-        address susdsImp;
-
-        // Token Bridge
-        L1TokenBridgeInstance l1BridgeInstance;
-        L2TokenBridgeInstance l2BridgeInstance;
-
-        // ALM Controller
-        address           safe;
-        ForeignController almController;
-        ALMProxy          almProxy;
-
-        // PSM
-        PSM3 psm;
-
-        // XChain DSR Oracle
-        address          dsrForwarder;  // On Mainnet
-        OptimismReceiver dsrReceiver;
-        DSRAuthOracle    dsrOracle;
-    }
 
     using stdJson for string;
     using ScriptTools for string;
@@ -307,6 +355,8 @@ contract SetupAll is Script {
         mainnet.usdsInstance  = UsdsDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
         mainnet.susdsInstance = SUsdsDeploy.deploy(deployer, mainnet.admin, mainnet.usdsInstance.usdsJoin);
         mainnet.skyInstance   = SkyDeploy.deploy(deployer, mainnet.admin, mainnet.chainlog.getAddress("MCD_GOV"), MKR_SKY_CONVERSION_RATE);
+        mainnet.spk           = new SDAO("Spark", "SPK");
+        ScriptTools.switchOwner(address(mainnet.spk), deployer, mainnet.admin);
 
         // Initialization phase (needs executing as pause proxy owner)
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
@@ -329,6 +379,7 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "sUsdsImp", mainnet.susdsInstance.sUsdsImp);
         ScriptTools.exportContract(mainnet.name, "sky",      mainnet.skyInstance.sky);
         ScriptTools.exportContract(mainnet.name, "mkrSky",   mainnet.skyInstance.mkrSky);
+        ScriptTools.exportContract(mainnet.name, "spk",      address(mainnet.spk));
     }
 
     function setupAllocationSystem() internal {
@@ -438,45 +489,108 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
+    function _createFarm(
+        DssVest vest,
+        address stakingToken,
+        uint256 total,
+        uint256 duration
+    ) internal returns (Farm memory farm) {
+        address distributionExpectedAddress = _getDeploymentAddress(1);
+
+        // Deploy
+        farm.vest = vest;
+        farm.rewards = new StakingRewards(
+            mainnet.admin,
+            distributionExpectedAddress,
+            address(DssVestMintable(address(vest)).gem()),
+            stakingToken
+        );
+        farm.distribution = new VestedRewardsDistribution(address(vest), address(farm.rewards));
+        require(address(farm.distribution) == distributionExpectedAddress, "addr mismatch");
+        ScriptTools.switchOwner(address(farm.distribution), deployer, mainnet.admin);
+
+        // Init
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initFarm, (
+                farm,
+                total,
+                duration
+            ))
+        );
+    }
+
     function setupFarms() internal {
         vm.selectFork(mainnet.forkId);
 
         vm.startBroadcast();
 
-        // Vest
-        mainnet.vest = new DssVestMintable(address(mainnet.skyInstance.sky));
-        ScriptTools.switchOwner(address(mainnet.vest), deployer, mainnet.admin);
-
-        // SKY mainnet farm
-        mainnet.skyFarmRewards = new StakingRewards(
-            mainnet.admin,
-            vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1),
-            address(mainnet.skyInstance.sky),
-            address(mainnet.usdsInstance.usds)
-        );
-        mainnet.skyFarmDistribution = new VestedRewardsDistribution(address(mainnet.vest), address(mainnet.skyFarmRewards));
-        ScriptTools.switchOwner(address(mainnet.skyFarmDistribution), deployer, mainnet.admin);
-
+        // SKY Vest
+        mainnet.skyVest = new DssVestMintable(mainnet.skyInstance.sky);
+        ScriptTools.switchOwner(address(mainnet.skyVest), deployer, mainnet.admin);
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
-            abi.encodeCall(mainnet.spell.initFarms, (
-                Sky(mainnet.skyInstance.sky),
-                mainnet.vest,
-                mainnet.skyFarmDistribution,
-                mainnet.config.readUint(".skyFarmTotal") * 1e18,
-                mainnet.config.readUint(".skyFarmDuration")
+            abi.encodeCall(mainnet.spell.initVest, (
+                mainnet.skyVest,
+                mainnet.skyInstance.sky
             ))
+        );
+
+        // SPK Vest
+        mainnet.spkVest = new DssVestMintable(address(mainnet.spk));
+        ScriptTools.switchOwner(address(mainnet.spkVest), deployer, mainnet.admin);
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initVest, (
+                mainnet.spkVest,
+                address(mainnet.spk)
+            ))
+        );
+
+        // Farms
+        mainnet.skyUsdsFarm = _createFarm(
+            mainnet.skyVest,
+            address(mainnet.usdsInstance.usds),
+            mainnet.config.readUint(".farms.skyUsds.total") * 1e18,
+            mainnet.config.readUint(".farms.skyUsds.duration")
+        );
+        mainnet.spkUsdsFarm = _createFarm(
+            mainnet.spkVest,
+            address(mainnet.usdsInstance.usds),
+            mainnet.config.readUint(".farms.spkUsds.total") * 1e18,
+            mainnet.config.readUint(".farms.spkUsds.duration")
+        );
+        mainnet.skySpkFarm = _createFarm(
+            mainnet.skyVest,
+            address(mainnet.spk),
+            mainnet.config.readUint(".farms.skySpk.total") * 1e18,
+            mainnet.config.readUint(".farms.skySpk.duration")
+        );
+        mainnet.spkSkyFarm = _createFarm(
+            mainnet.spkVest,
+            address(mainnet.skyInstance.sky),
+            mainnet.config.readUint(".farms.spkSky.total") * 1e18,
+            mainnet.config.readUint(".farms.spkSky.duration")
         );
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(mainnet.name, "vest",                address(mainnet.vest));
-        ScriptTools.exportContract(mainnet.name, "skyFarmDistribution", address(mainnet.skyFarmDistribution));
-        ScriptTools.exportContract(mainnet.name, "skyFarmRewards",      address(mainnet.skyFarmRewards));
+        ScriptTools.exportContract(mainnet.name, "skyVest", address(mainnet.skyVest));
+        ScriptTools.exportContract(mainnet.name, "spkVest", address(mainnet.spkVest));
+
+        ScriptTools.exportContract(mainnet.name, "skyUsdsFarmDistribution", address(mainnet.skyUsdsFarm.distribution));
+        ScriptTools.exportContract(mainnet.name, "skyUsdsFarmRewards",      address(mainnet.skyUsdsFarm.rewards));
+
+        ScriptTools.exportContract(mainnet.name, "spkUsdsFarmDistribution", address(mainnet.spkUsdsFarm.distribution));
+        ScriptTools.exportContract(mainnet.name, "spkUsdsFarmRewards",      address(mainnet.spkUsdsFarm.rewards));
+
+        ScriptTools.exportContract(mainnet.name, "skySpkFarmDistribution", address(mainnet.skySpkFarm.distribution));
+        ScriptTools.exportContract(mainnet.name, "skySpkFarmRewards",      address(mainnet.skySpkFarm.rewards));
+
+        ScriptTools.exportContract(mainnet.name, "spkSkyFarmDistribution", address(mainnet.spkSkyFarm.distribution));
+        ScriptTools.exportContract(mainnet.name, "spkSkyFarmRewards",      address(mainnet.spkSkyFarm.rewards));
     }
 
     // Deploy an instance of USDS which will closely resemble the L2 versions of the tokens
     // TODO: This should be replaced by the actual tokens when they are available
-    function deployUsdsInstance(
+    function _deployUsdsInstance(
         address _deployer,
         address _owner
     ) internal returns (Usds instance, address implementation) {
@@ -529,8 +643,12 @@ contract SetupAll is Script {
             l2CrossDomain
         );
 
-        (domain.usds, domain.usdsImp)   = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
-        (domain.susds, domain.susdsImp) = deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.usds, domain.usdsImp)   = _deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
+        (domain.susds, domain.susdsImp) = _deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
+        domain.sky = new Sky();
+        ScriptTools.switchOwner(address(domain.sky), deployer, domain.l2BridgeInstance.govRelay);
+        domain.spk = new SDAO("Spark", "SPK");
+        ScriptTools.switchOwner(address(domain.spk), deployer, domain.l2BridgeInstance.govRelay);
 
         vm.stopBroadcast();
 
@@ -540,13 +658,17 @@ contract SetupAll is Script {
 
         vm.startBroadcast();
 
-        address[] memory l1Tokens = new address[](2);
+        address[] memory l1Tokens = new address[](4);
         l1Tokens[0] = mainnet.usdsInstance.usds;
         l1Tokens[1] = mainnet.susdsInstance.sUsds;
+        l1Tokens[2] = mainnet.skyInstance.sky;
+        l1Tokens[3] = address(mainnet.spk);
 
-        address[] memory l2Tokens = new address[](2);
+        address[] memory l2Tokens = new address[](4);
         l2Tokens[0] = address(domain.usds);
         l2Tokens[1] = address(domain.susds);
+        l2Tokens[2] = address(domain.sky);
+        l2Tokens[3] = address(domain.spk);
 
         string memory clPrefix = domain.config.readString(".chainlogPrefix");
 
@@ -574,6 +696,8 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "usdsImp",       domain.usdsImp);
         ScriptTools.exportContract(domain.name, "sUsds",         address(domain.susds));
         ScriptTools.exportContract(domain.name, "sUsdsImp",      domain.susdsImp);
+        ScriptTools.exportContract(domain.name, "sky",           address(domain.sky));
+        ScriptTools.exportContract(domain.name, "spk",           address(domain.spk));
         ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1BridgeInstance.bridge);
@@ -584,6 +708,8 @@ contract SetupAll is Script {
     function setupOpStackCrossChainDSROracle(OpStackForeignDomain storage domain) internal {
         vm.selectFork(mainnet.forkId);
 
+        vm.startBroadcast();
+
         address expectedReceiver = vm.computeCreateAddress(deployer, 2);
         if (domain.name.eq("base")) {
             domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.susdsInstance.sUsds), expectedReceiver));
@@ -591,11 +717,23 @@ contract SetupAll is Script {
             revert("Unsupported domain");
         }
 
+        vm.stopBroadcast();
         vm.selectFork(domain.forkId);
+        vm.startBroadcast();
 
         domain.dsrOracle   = new DSRAuthOracle();
         domain.dsrReceiver = new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle));
         domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
+        // FIXME: this is being set manually, but needs to be initialized for real when in production
+        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
+        domain.dsrOracle.setPotData(IDSROracle.PotData({
+            dsr: 1e27,
+            chi: 1e27,
+            rho: uint40(block.timestamp)
+        }));
+        domain.dsrOracle.revokeRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
+
+        vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "l1DSRForwarder", domain.dsrForwarder);
         ScriptTools.exportContract(domain.name, "dsrReceiver",    address(domain.dsrReceiver));
@@ -669,6 +807,169 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "almController", address(domain.almController));
     }
 
+    struct OpStackFarmVars {
+        address rewardsTokenL1;
+        address l2ProxyExpectedAddress;
+        ProxiesConfig cfg;
+    }
+
+    function _createOpStackFarm(
+        OpStackForeignDomain storage domain,
+        DssVest vest,
+        address stakingTokenL2,
+        address rewardsTokenL2,
+        uint256 total,
+        uint256 duration,
+        string memory farmName
+    ) internal returns (OpStackFarm memory farm) {
+        vm.selectFork(mainnet.forkId);
+
+        OpStackFarmVars memory vars = OpStackFarmVars({
+            rewardsTokenL1: address(DssVestMintable(address(vest)).gem()),
+            l2ProxyExpectedAddress: _getDeploymentAddress(domain.forkId, 1),
+            cfg: ProxiesConfig({
+                vest: address(vest),
+                vestTot: total,
+                vestBgn: block.timestamp,
+                vestTau: duration,
+                vestedRewardsDistribution: address(0),
+                l1RewardsToken: address(0),  // Can't reference vars.rewardsTokenL1 before vars is initialized
+                l2RewardsToken: rewardsTokenL2,
+                l2StakingToken: stakingTokenL2,
+                l1Bridge: domain.l1BridgeInstance.bridge,
+                minGasLimit: 1_000_000,
+                rewardThreshold: 0,
+                farm: address(0),
+                rewardsDuration: 7 days,
+                initMinGasLimit: 1_000_000,
+                proxyChainlogKey: string.concat(farmName, "_PROXY").stringToBytes32(),
+                distrChainlogKey: string.concat(farmName, "_DISTRIBUTION").stringToBytes32()
+            })
+        });
+        vars.cfg.l1RewardsToken = vars.rewardsTokenL1;
+
+        vm.startBroadcast();
+
+        // Deploy
+        farm.l1Proxy = L1FarmProxy(FarmProxyDeploy.deployL1Proxy(
+            deployer,
+            mainnet.admin, 
+            vars.rewardsTokenL1,
+            rewardsTokenL2,
+            vars.l2ProxyExpectedAddress,
+            domain.l1BridgeInstance.bridge
+        ));
+        farm.vest = vest;
+        farm.distribution = new VestedRewardsDistribution(address(vest), address(farm.l1Proxy));
+        ScriptTools.switchOwner(address(farm.distribution), deployer, mainnet.admin);
+        vars.cfg.vestedRewardsDistribution = address(farm.distribution);
+
+        vm.stopBroadcast();
+        vm.selectFork(domain.forkId);
+        vm.startBroadcast();
+
+        farm.rewards = new StakingRewards(
+            mainnet.admin,
+            vars.l2ProxyExpectedAddress,
+            rewardsTokenL2,
+            stakingTokenL2
+        );
+        vars.cfg.farm = address(farm.rewards);
+        farm.l2Proxy = L2FarmProxy(FarmProxyDeploy.deployL2Proxy(
+            deployer,
+            domain.l2BridgeInstance.govRelay,
+            address(farm.rewards)
+        ));
+        require(address(farm.l2Proxy) == vars.l2ProxyExpectedAddress, "addr mismatch");
+        farm.l2Spell = FarmProxyDeploy.deployL2ProxySpell();
+
+        vm.stopBroadcast();
+        vm.selectFork(mainnet.forkId);
+        vm.startBroadcast();
+
+        // Init
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initOpStackFarm, (
+                mainnet.dss,
+                domain,
+                farm,
+                vars.cfg
+            ))
+        );
+
+        vm.stopBroadcast();
+    }
+
+    function setupOpStackFarms(OpStackForeignDomain storage domain) internal {
+        // SKY-USDS Farm
+        domain.skyUsdsFarm = _createOpStackFarm(
+            domain,
+            mainnet.skyVest,
+            address(domain.usds),
+            address(domain.sky),
+            domain.config.readUint(".farms.skyUsds.total") * 1e18,
+            domain.config.readUint(".farms.skyUsds.duration"),
+            "SKY-USDS"
+        );
+
+        // SPK-USDS Farm
+        domain.spkUsdsFarm = _createOpStackFarm(
+            domain,
+            mainnet.spkVest,
+            address(domain.usds),
+            address(domain.spk),
+            domain.config.readUint(".farms.spkUsds.total") * 1e18,
+            domain.config.readUint(".farms.spkUsds.duration"),
+            "SPK-USDS"
+        );
+
+        // SKY-SPK Farm
+        domain.skySpkFarm = _createOpStackFarm(
+            domain,
+            mainnet.skyVest,
+            address(domain.spk),
+            address(domain.sky),
+            domain.config.readUint(".farms.skySpk.total") * 1e18,
+            domain.config.readUint(".farms.skySpk.duration"),
+            "SKY-SPK"
+        );
+
+        // SPK-SKY Farm
+        domain.spkSkyFarm = _createOpStackFarm(
+            domain,
+            mainnet.spkVest,
+            address(domain.sky),
+            address(domain.spk),
+            domain.config.readUint(".farms.spkSky.total") * 1e18,
+            domain.config.readUint(".farms.spkSky.duration"),
+            "SPK-SKY"
+        );
+
+        ScriptTools.exportContract(domain.name, "skyUsdsFarmDistribution", address(domain.skyUsdsFarm.distribution));
+        ScriptTools.exportContract(domain.name, "skyUsdsFarmRewards",      address(domain.skyUsdsFarm.rewards));
+        ScriptTools.exportContract(domain.name, "skyUsdsFarmL1Proxy",      address(domain.skyUsdsFarm.l1Proxy));
+        ScriptTools.exportContract(domain.name, "skyUsdsFarmL2Proxy",      address(domain.skyUsdsFarm.l2Proxy));
+        ScriptTools.exportContract(domain.name, "skyUsdsFarmL2Spell",      domain.skyUsdsFarm.l2Spell);
+
+        ScriptTools.exportContract(domain.name, "spkUsdsFarmDistribution", address(domain.spkUsdsFarm.distribution));
+        ScriptTools.exportContract(domain.name, "spkUsdsFarmRewards",      address(domain.spkUsdsFarm.rewards));
+        ScriptTools.exportContract(domain.name, "spkUsdsFarmL1Proxy",      address(domain.spkUsdsFarm.l1Proxy));
+        ScriptTools.exportContract(domain.name, "spkUsdsFarmL2Proxy",      address(domain.spkUsdsFarm.l2Proxy));
+        ScriptTools.exportContract(domain.name, "spkUsdsFarmL2Spell",      domain.spkUsdsFarm.l2Spell);
+
+        ScriptTools.exportContract(domain.name, "skySpkFarmDistribution", address(domain.skySpkFarm.distribution));
+        ScriptTools.exportContract(domain.name, "skySpkFarmRewards",      address(domain.skySpkFarm.rewards));
+        ScriptTools.exportContract(domain.name, "skySpkFarmL1Proxy",      address(domain.skySpkFarm.l1Proxy));
+        ScriptTools.exportContract(domain.name, "skySpkFarmL2Proxy",      address(domain.skySpkFarm.l2Proxy));
+        ScriptTools.exportContract(domain.name, "skySpkFarmL2Spell",      domain.skySpkFarm.l2Spell);
+
+        ScriptTools.exportContract(domain.name, "spkSkyFarmDistribution", address(domain.spkSkyFarm.distribution));
+        ScriptTools.exportContract(domain.name, "spkSkyFarmRewards",      address(domain.spkSkyFarm.rewards));
+        ScriptTools.exportContract(domain.name, "spkSkyFarmL1Proxy",      address(domain.spkSkyFarm.l1Proxy));
+        ScriptTools.exportContract(domain.name, "spkSkyFarmL2Proxy",      address(domain.spkSkyFarm.l2Proxy));
+        ScriptTools.exportContract(domain.name, "spkSkyFarmL2Spell",      domain.spkSkyFarm.l2Spell);
+    }
+
     function run() public {
         vm.setEnv("FOUNDRY_ROOT_CHAINID", "1");
         vm.setEnv("FOUNDRY_EXPORTS_OVERWRITE_LATEST", "true");
@@ -689,6 +990,20 @@ contract SetupAll is Script {
         setupOpStackForeignPSM(base);
         setupOpStackSafe(base);
         setupOpStackALMController(base);
+        setupOpStackFarms(base);
+    }
+
+    function _getDeploymentAddress(uint256 forkId, uint256 delta) internal returns (address addr) {
+        uint256 currentFork = vm.activeFork();
+        vm.selectFork(forkId);
+
+        addr = _getDeploymentAddress(delta);
+
+        vm.selectFork(currentFork);
+    }
+
+    function _getDeploymentAddress(uint256 delta) internal view returns (address addr) {
+        addr = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + delta);
     }
 
 }

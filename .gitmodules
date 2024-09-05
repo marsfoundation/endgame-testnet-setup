@@ -49,3 +49,6 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/openzeppelin/openzeppelin-contracts
+[submodule "lib/op-farms"]
+	path = lib/op-farms
+	url = https://github.com/makerdao/op-farms
