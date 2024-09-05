@@ -40,4 +40,5 @@ cast rpc --rpc-url="$BASE_RPC_URL" anvil_setBalance 0xbE286431454714F51100871397
 cast rpc --rpc-url="$BASE_RPC_URL" anvil_impersonateAccount 0xbE286431454714F511008713973d3B053A2d38f3
 ```
 
-Deploy: `forge script script/SetupAll.s.sol:SetupAll --broadcast --multi --unlocked --sender 0xbE286431454714F511008713973d3B053A2d38f3`
+Deploy: `forge script script/SetupAll.s.sol:SetupAll --broadcast --multi --slow --unlocked --sender 0xbE286431454714F511008713973d3B053A2d38f3`  
+Test: `forge test`  

@@ -100,9 +100,9 @@ contract SetupAllMainetTest is Test {
         assertEq(usds.balanceOf(address(almProxy)), 0);
     }
 
-    function test_sky_farm() public {
-        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".skyFarmDistribution"));
-        StakingRewards rewards = StakingRewards(output.readAddress(".skyFarmRewards"));
+    function test_sky_usds_farm() public {
+        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".skyUsdsFarmDistribution"));
+        StakingRewards rewards = StakingRewards(output.readAddress(".skyUsdsFarmRewards"));
 
         deal(address(usds), address(this), 300e18);
         usds.approve(address(rewards), 300e18);
@@ -135,9 +135,9 @@ contract SetupAllMainetTest is Test {
         assertEq(sky.balanceOf(address(this)),  amountEarned);
     }
 
-    function test_spk_farm() public {
-        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".spkFarmDistribution"));
-        StakingRewards rewards = StakingRewards(output.readAddress(".spkFarmRewards"));
+    function test_spk_usds_farm() public {
+        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".spkUsdsFarmDistribution"));
+        StakingRewards rewards = StakingRewards(output.readAddress(".spkUsdsFarmRewards"));
 
         deal(address(usds), address(this), 300e18);
         usds.approve(address(rewards), 300e18);
