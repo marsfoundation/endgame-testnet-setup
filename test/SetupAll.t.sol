@@ -5,9 +5,11 @@ import "forge-std/Test.sol";
 
 import { ScriptTools } from "lib/dss-test/src/ScriptTools.sol";
 
-import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
+import { Bridge }                from "xchain-helpers/testing/Bridge.sol";
+import { Domain, DomainHelpers } from "xchain-helpers/testing/Domain.sol";
+import { OptimismBridgeTesting } from "xchain-helpers/testing/bridges/OptimismBridgeTesting.sol";
 
-import { IERC20 }      from "lib/forge-std/src/interfaces/IERC20.sol";
+import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
 import { Usds } from "lib/usds/src/Usds.sol";
 import { Sky }  from "lib/sky/src/Sky.sol";
@@ -21,12 +23,21 @@ import { DssVest } from "src/DssVest.sol";
 import { VestedRewardsDistribution } from "lib/endgame-toolkit/src/VestedRewardsDistribution.sol";
 import { StakingRewards }            from "lib/endgame-toolkit/src/synthetix/StakingRewards.sol";
 
-contract SetupAllMainetTest is Test {
+import { PSM3, IERC20 } from "lib/spark-psm/src/PSM3.sol";
+
+contract SetupAllTest is Test {
 
     using stdJson for *;
+    using DomainHelpers for *;
 
-    string output;
+    string outputMainnet;
+    string outputBase;
 
+    Domain mainnet;
+    Domain base;
+    Bridge bridge;
+
+    // Mainnet contracts
     Usds   usds;
     Sky    sky;
     SDAO   spk;
@@ -40,24 +51,33 @@ contract SetupAllMainetTest is Test {
     DssVest skyVest;
     DssVest spkVest;
 
+    // Base contracts
+    PSM3 psm;
+
     function setUp() public {
         vm.setEnv("FOUNDRY_ROOT_CHAINID", "1");
 
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
-        output = ScriptTools.readOutput("mainnet");
+        mainnet = getChain("mainnet").createSelectFork();
+        base    = getChain("base").createFork();
+        bridge  = OptimismBridgeTesting.createNativeBridge(mainnet, base);
+        
+        outputMainnet = ScriptTools.readOutput("mainnet");
+        outputBase = ScriptTools.readOutput("base");
 
-        usds = Usds(output.readAddress(".usds"));
-        sky  = Sky(output.readAddress(".sky"));
-        spk  = SDAO(output.readAddress(".spk"));
+        usds = Usds(outputMainnet.readAddress(".usds"));
+        sky  = Sky(outputMainnet.readAddress(".sky"));
+        spk  = SDAO(outputMainnet.readAddress(".spk"));
         usdc = IERC20(Ethereum.USDC);
 
-        safe = output.readAddress(".safe");
+        safe = outputMainnet.readAddress(".safe");
         
-        mainnetController = MainnetController(output.readAddress(".almController"));
-        almProxy          = ALMProxy(output.readAddress(".almProxy"));
+        mainnetController = MainnetController(outputMainnet.readAddress(".almController"));
+        almProxy          = ALMProxy(outputMainnet.readAddress(".almProxy"));
 
-        skyVest = DssVest(output.readAddress(".skyVest"));
-        spkVest = DssVest(output.readAddress(".spkVest"));
+        skyVest = DssVest(outputMainnet.readAddress(".skyVest"));
+        spkVest = DssVest(outputMainnet.readAddress(".spkVest"));
+
+        psm = PSM3(outputBase.readAddress(".psm"));
 
         assertEq(usds.balanceOf(address(almProxy)), 0);
         assertEq(usdc.balanceOf(address(almProxy)), 0);
@@ -101,8 +121,8 @@ contract SetupAllMainetTest is Test {
     }
 
     function test_sky_usds_farm() public {
-        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".skyUsdsFarmDistribution"));
-        StakingRewards rewards = StakingRewards(output.readAddress(".skyUsdsFarmRewards"));
+        VestedRewardsDistribution distribution = VestedRewardsDistribution(outputMainnet.readAddress(".skyUsdsFarmDistribution"));
+        StakingRewards rewards = StakingRewards(outputMainnet.readAddress(".skyUsdsFarmRewards"));
 
         deal(address(usds), address(this), 300e18);
         usds.approve(address(rewards), 300e18);
@@ -136,8 +156,8 @@ contract SetupAllMainetTest is Test {
     }
 
     function test_spk_usds_farm() public {
-        VestedRewardsDistribution distribution = VestedRewardsDistribution(output.readAddress(".spkUsdsFarmDistribution"));
-        StakingRewards rewards = StakingRewards(output.readAddress(".spkUsdsFarmRewards"));
+        VestedRewardsDistribution distribution = VestedRewardsDistribution(outputMainnet.readAddress(".spkUsdsFarmDistribution"));
+        StakingRewards rewards = StakingRewards(outputMainnet.readAddress(".spkUsdsFarmRewards"));
 
         deal(address(usds), address(this), 300e18);
         usds.approve(address(rewards), 300e18);
@@ -168,6 +188,17 @@ contract SetupAllMainetTest is Test {
         
         assertEq(usds.balanceOf(address(this)), 300e18);
         assertEq(spk.balanceOf(address(this)),  amountEarned);
+    }
+
+    function test_base_psm() public {
+        base.selectFork();
+
+        psm = PSM3(outputBase.readAddress(".psm"));
+
+        IERC20 usdcBase = psm.asset0();
+        deal(address(usdcBase), address(this), 1e6);
+        usdcBase.approve(address(psm), 1e6);
+        psm.deposit(address(usdcBase), address(this), 1e6);
     }
 
 }

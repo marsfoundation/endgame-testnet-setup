@@ -708,6 +708,8 @@ contract SetupAll is Script {
     function setupOpStackCrossChainDSROracle(OpStackForeignDomain storage domain) internal {
         vm.selectFork(mainnet.forkId);
 
+        vm.startBroadcast();
+
         address expectedReceiver = vm.computeCreateAddress(deployer, 2);
         if (domain.name.eq("base")) {
             domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.susdsInstance.sUsds), expectedReceiver));
@@ -715,11 +717,15 @@ contract SetupAll is Script {
             revert("Unsupported domain");
         }
 
+        vm.stopBroadcast();
         vm.selectFork(domain.forkId);
+        vm.startBroadcast();
 
         domain.dsrOracle   = new DSRAuthOracle();
         domain.dsrReceiver = new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle));
         domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
+
+        vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "l1DSRForwarder", domain.dsrForwarder);
         ScriptTools.exportContract(domain.name, "dsrReceiver",    address(domain.dsrReceiver));
