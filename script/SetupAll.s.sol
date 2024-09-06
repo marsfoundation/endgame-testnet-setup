@@ -219,7 +219,8 @@ contract SetupMainnetSpell {
         ALMProxy almProxy,
         MainnetController mainnetController,
         address freezer,
-        address relayer
+        address relayer,
+        bytes32 baseMintRecipient
     ) external {
         // Whitelist the proxy on the Lite PSM
         ILitePSM(address(mainnetController.psm())).kiss(address(almProxy));
@@ -233,7 +234,8 @@ contract SetupMainnetSpell {
                 almProxy,
                 mainnetController,
                 freezer,
-                relayer
+                relayer,
+                baseMintRecipient
             )
         ));
     }
@@ -244,12 +246,14 @@ contract SetupMainnetSpell {
         ALMProxy almProxy,
         MainnetController mainnetController,
         address freezer,
-        address relayer
+        address relayer,
+        bytes32 baseMintRecipient
     ) external {
         AllocatorVault(allocatorIlkInstance.vault).rely(address(almProxy));
 
         mainnetController.grantRole(mainnetController.FREEZER(), freezer);
         mainnetController.grantRole(mainnetController.RELAYER(), relayer);
+        mainnetController.setMintRecipient(6, baseMintRecipient);
 
         almProxy.grantRole(almProxy.CONTROLLER(), address(mainnetController));
 
@@ -454,12 +458,23 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "safe", mainnet.safe);
     }
 
-    function setupALMController() internal {
+    function predeployALMProxy() internal {
         vm.selectFork(mainnet.forkId);
 
         vm.startBroadcast();
 
         mainnet.almProxy = new ALMProxy(Ethereum.SPARK_PROXY);
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(mainnet.name, "almProxy", address(mainnet.almProxy));
+    }
+
+    function setupALMController() internal {
+        vm.selectFork(mainnet.forkId);
+
+        vm.startBroadcast();
+
         mainnet.almController = new MainnetController({
             admin_   : Ethereum.SPARK_PROXY,
             proxy_   : address(mainnet.almProxy),
@@ -479,13 +494,13 @@ contract SetupAll is Script {
                 mainnet.almProxy,
                 mainnet.almController,
                 mainnet.config.readAddress(".freezer"),
-                mainnet.safe
+                mainnet.safe,
+                bytes32(uint256(uint160(address(base.almProxy))))
             ))
         );
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(mainnet.name, "almProxy",      address(mainnet.almProxy));
         ScriptTools.exportContract(mainnet.name, "almController", address(mainnet.almController));
     }
 
@@ -773,13 +788,25 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "safe", domain.safe);
     }
 
-    function setupOpStackALMController(OpStackForeignDomain storage domain) internal {
+    function predeployOpStackALMProxy(OpStackForeignDomain storage domain) internal {
         vm.selectFork(domain.forkId);
 
         vm.startBroadcast();
 
         // Temporarily granting admin role to the deployer for straightforward configuration
         domain.almProxy = new ALMProxy(msg.sender);
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(domain.name, "almProxy",      address(domain.almProxy));
+    }
+
+    function setupOpStackALMController(OpStackForeignDomain storage domain) internal {
+        vm.selectFork(domain.forkId);
+
+        vm.startBroadcast();
+
+        // Temporarily granting admin role to the deployer for straightforward configuration
         domain.almController = new ForeignController({
             admin_ : msg.sender,
             proxy_ : address(domain.almProxy),
@@ -793,6 +820,7 @@ contract SetupAll is Script {
         domain.almController.grantRole(domain.almController.FREEZER(),            domain.config.readAddress(".freezer"));
         domain.almController.grantRole(domain.almController.RELAYER(),            domain.safe);
         domain.almController.grantRole(domain.almController.DEFAULT_ADMIN_ROLE(), domain.l2BridgeInstance.govRelay);
+        domain.almController.setMintRecipient(0, bytes32(uint256(uint160(address(mainnet.almProxy)))));
 
         domain.almController.revokeRole(domain.almController.DEFAULT_ADMIN_ROLE(), msg.sender);
 
@@ -803,7 +831,6 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(domain.name, "almProxy",      address(domain.almProxy));
         ScriptTools.exportContract(domain.name, "almController", address(domain.almController));
     }
 
@@ -853,7 +880,7 @@ contract SetupAll is Script {
         // Deploy
         farm.l1Proxy = L1FarmProxy(FarmProxyDeploy.deployL1Proxy(
             deployer,
-            mainnet.admin, 
+            mainnet.admin,
             vars.rewardsTokenL1,
             rewardsTokenL2,
             vars.l2ProxyExpectedAddress,
@@ -978,6 +1005,9 @@ contract SetupAll is Script {
 
         mainnet = createEthereumDomain();
         base    = createOpStackForeignDomain("base");
+
+        predeployALMProxy();
+        predeployOpStackALMProxy(base);
 
         setupNewTokens();
         setupAllocationSystem();
