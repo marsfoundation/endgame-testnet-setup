@@ -4,12 +4,9 @@ A single script which will setup all contracts on Mainnet and Base from forks to
 
 Deploys and configures:
 
- * USDS
- * sUSDS
- * SKY
  * Allocation System Core
  * Spark ALM Controller
- * Farms on Mainnet (SKY-USDS, SPK-USDS, SKY-SPK, SPK-SKY)
+ * Farms on Mainnet/Base (SKY-USDS, SPK-USDS, SKY-SPK, SPK-SKY)
  * Sky L2 Cross-chain Governance
  * L2 Token Bridge
  * L2 sUSDS Exchange Rate Oracle
