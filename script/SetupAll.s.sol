@@ -504,14 +504,7 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         // SKY Vest
-        mainnet.skyVest = new DssVestMintable(mainnet.skyInstance.sky);
-        ScriptTools.switchOwner(address(mainnet.skyVest), deployer, mainnet.admin);
-        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
-            abi.encodeCall(mainnet.spell.initVest, (
-                mainnet.skyVest,
-                mainnet.skyInstance.sky
-            ))
-        );
+        mainnet.skyVest = DssVest(mainnet.chainlog.getAddress("MCD_VEST_SKY"));
 
         // SPK Vest
         mainnet.spkVest = new DssVestMintable(address(mainnet.spk));
@@ -524,12 +517,11 @@ contract SetupAll is Script {
         );
 
         // Farms
-        mainnet.skyUsdsFarm = _createFarm(
-            mainnet.skyVest,
-            address(mainnet.usdsInstance.usds),
-            mainnet.config.readUint(".farms.skyUsds.total") * 1e18,
-            mainnet.config.readUint(".farms.skyUsds.duration")
-        );
+        mainnet.skyUsdsFarm = Farm({
+            vest: DssVest(mainnet.chainlog.getAddress("MCD_VEST_SKY")),
+            rewards: StakingRewards(mainnet.chainlog.getAddress("REWARDS_USDS_SKY")),
+            distribution: VestedRewardsDistribution(mainnet.chainlog.getAddress("REWARDS_DIST_USDS_SKY"))
+        });
         mainnet.spkUsdsFarm = _createFarm(
             mainnet.spkVest,
             address(mainnet.usdsInstance.usds),
