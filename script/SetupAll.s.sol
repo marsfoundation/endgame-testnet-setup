@@ -332,17 +332,17 @@ contract SetupAll is Script {
 
         // Deploy phase
         mainnet.usdsInstance = UsdsInstance({
-            usds: mainnet.chainlog.getAddress("USDS"),
-            usdsImp: mainnet.chainlog.getAddress("USDS_IMP"),
+            usds:     mainnet.chainlog.getAddress("USDS"),
+            usdsImp:  mainnet.chainlog.getAddress("USDS_IMP"),
             usdsJoin: mainnet.chainlog.getAddress("USDS_JOIN"),
-            daiUsds: mainnet.chainlog.getAddress("DAI_USDS")
+            daiUsds:  mainnet.chainlog.getAddress("DAI_USDS")
         });
         mainnet.susdsInstance = SUsdsInstance({
-            sUsds: mainnet.chainlog.getAddress("SUSDS"),
+            sUsds:    mainnet.chainlog.getAddress("SUSDS"),
             sUsdsImp: mainnet.chainlog.getAddress("SUSDS_IMP")
         });
         mainnet.skyInstance = SkyInstance({
-            sky: mainnet.chainlog.getAddress("SKY"),
+            sky:    mainnet.chainlog.getAddress("SKY"),
             mkrSky: mainnet.chainlog.getAddress("MKR_SKY")
         });
         mainnet.spk = new SDAO("Spark", "SPK");
@@ -518,8 +518,8 @@ contract SetupAll is Script {
 
         // Farms
         mainnet.skyUsdsFarm = Farm({
-            vest: DssVest(mainnet.chainlog.getAddress("MCD_VEST_SKY")),
-            rewards: StakingRewards(mainnet.chainlog.getAddress("REWARDS_USDS_SKY")),
+            vest:         DssVest(mainnet.chainlog.getAddress("MCD_VEST_SKY")),
+            rewards:      StakingRewards(mainnet.chainlog.getAddress("REWARDS_USDS_SKY")),
             distribution: VestedRewardsDistribution(mainnet.chainlog.getAddress("REWARDS_DIST_USDS_SKY"))
         });
         mainnet.spkUsdsFarm = _createFarm(
