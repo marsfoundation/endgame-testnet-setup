@@ -38,12 +38,15 @@ import { AllocatorVault }  from "lib/dss-allocator/src/AllocatorVault.sol";
 import { ALMProxy }          from "lib/spark-alm-controller/src/ALMProxy.sol";
 import { ForeignController } from "lib/spark-alm-controller/src/ForeignController.sol";
 import { MainnetController } from "lib/spark-alm-controller/src/MainnetController.sol";
+import { RateLimits }        from "lib/spark-alm-controller/src/RateLimits.sol";
+import { RateLimitHelpers }  from "lib/spark-alm-controller/src/RateLimitHelpers.sol";
 
 import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
 import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
 import { DSRAuthOracle, IDSROracle }   from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
 
 import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
+import { CCTPForwarder }     from "lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
 
 import { L1TokenBridgeInstance }          from "lib/op-token-bridge/deploy/L1TokenBridgeInstance.sol";
 import { L2TokenBridgeInstance }          from "lib/op-token-bridge/deploy/L2TokenBridgeInstance.sol";
@@ -101,6 +104,7 @@ struct EthereumDomain {
     address           safe;
     MainnetController almController;
     ALMProxy          almProxy;
+    RateLimits        rateLimits;
 
     // Farms
     DssVest skyVest;
@@ -133,6 +137,7 @@ struct OpStackForeignDomain {
     address           safe;
     ForeignController almController;
     ALMProxy          almProxy;
+    RateLimits        rateLimits;
 
     // PSM
     PSM3 psm;
@@ -168,6 +173,9 @@ contract SetupMainnetSpell {
 
     uint256 constant ALLOCATOR_VAULT_RATE = 1000000001547125957863212448;  // 5% APY
 
+    uint256 constant RATE_LIMIT_MAX = 5_000_000e18;
+    uint256 constant RATE_LIMIT_SLOPE = uint256(1_000_000e18) / 4 hours;
+
     function initAllocator(
         DssInstance memory dss,
         AllocatorSharedInstance memory allocatorSharedInstance,
@@ -199,6 +207,7 @@ contract SetupMainnetSpell {
         AllocatorIlkInstance memory allocatorIlkInstance,
         ALMProxy almProxy,
         MainnetController mainnetController,
+        RateLimits rateLimits,
         address freezer,
         address relayer,
         bytes32 baseMintRecipient
@@ -214,6 +223,7 @@ contract SetupMainnetSpell {
                 allocatorIlkInstance,
                 almProxy,
                 mainnetController,
+                rateLimits,
                 freezer,
                 relayer,
                 baseMintRecipient
@@ -226,6 +236,7 @@ contract SetupMainnetSpell {
         AllocatorIlkInstance memory allocatorIlkInstance,
         ALMProxy almProxy,
         MainnetController mainnetController,
+        RateLimits rateLimits,
         address freezer,
         address relayer,
         bytes32 baseMintRecipient
@@ -237,12 +248,22 @@ contract SetupMainnetSpell {
         mainnetController.setMintRecipient(6, baseMintRecipient);
 
         almProxy.grantRole(almProxy.CONTROLLER(), address(mainnetController));
+        rateLimits.grantRole(rateLimits.CONTROLLER(), address(mainnetController));
 
         AllocatorBuffer(allocatorIlkInstance.buffer).approve(
             usdsInstance.usds,
             address(almProxy),
             type(uint256).max
         );
+
+        bytes32 domainKeyBase = RateLimitHelpers.makeDomainKey(
+            mainnetController.LIMIT_USDC_TO_DOMAIN(),
+            CCTPForwarder.DOMAIN_ID_CIRCLE_BASE
+        );
+        rateLimits.setUnlimitedRateLimitData(mainnetController.LIMIT_USDC_TO_CCTP());
+        rateLimits.setRateLimitData(mainnetController.LIMIT_USDS_MINT(),    RATE_LIMIT_MAX, RATE_LIMIT_SLOPE);
+        rateLimits.setRateLimitData(mainnetController.LIMIT_USDS_TO_USDC(), RATE_LIMIT_MAX / 1e12, RATE_LIMIT_SLOPE / 1e12);
+        rateLimits.setRateLimitData(domainKeyBase,                          RATE_LIMIT_MAX / 1e12, RATE_LIMIT_SLOPE / 1e12);
     }
 
     function initVest(
@@ -301,6 +322,9 @@ contract SetupAll is Script {
 
     using stdJson for string;
     using ScriptTools for string;
+
+    uint256 constant RATE_LIMIT_MAX = 5_000_000e18;
+    uint256 constant RATE_LIMIT_SLOPE = uint256(1_000_000e18) / 4 hours;
 
     EthereumDomain mainnet;
 
@@ -437,12 +461,13 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "safe", mainnet.safe);
     }
 
-    function predeployALMProxy() internal {
+    function predeployALMDependencies() internal {
         vm.selectFork(mainnet.forkId);
 
         vm.startBroadcast();
 
-        mainnet.almProxy = new ALMProxy(Ethereum.SPARK_PROXY);
+        mainnet.almProxy   = new ALMProxy(Ethereum.SPARK_PROXY);
+        mainnet.rateLimits = new RateLimits(Ethereum.SPARK_PROXY);
 
         vm.stopBroadcast();
 
@@ -455,14 +480,15 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         mainnet.almController = new MainnetController({
-            admin_   : Ethereum.SPARK_PROXY,
-            proxy_   : address(mainnet.almProxy),
-            vault_   : mainnet.allocatorIlkInstance.vault,
-            buffer_  : mainnet.allocatorIlkInstance.buffer,
-            psm_     : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
-            daiUsds_ : mainnet.usdsInstance.daiUsds,
-            cctp_    : mainnet.config.readAddress(".cctpTokenMessenger"),
-            susds_   : mainnet.susdsInstance.sUsds
+            admin_      : Ethereum.SPARK_PROXY,
+            proxy_      : address(mainnet.almProxy),
+            rateLimits_ : address(mainnet.rateLimits),
+            vault_      : mainnet.allocatorIlkInstance.vault,
+            buffer_     : mainnet.allocatorIlkInstance.buffer,
+            psm_        : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
+            daiUsds_    : mainnet.usdsInstance.daiUsds,
+            cctp_       : mainnet.config.readAddress(".cctpTokenMessenger"),
+            susds_      : mainnet.susdsInstance.sUsds
         });
 
         DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
@@ -472,6 +498,7 @@ contract SetupAll is Script {
                 mainnet.allocatorIlkInstance,
                 mainnet.almProxy,
                 mainnet.almController,
+                mainnet.rateLimits,
                 mainnet.config.readAddress(".freezer"),
                 mainnet.safe,
                 bytes32(uint256(uint160(address(base.almProxy))))
@@ -759,33 +786,34 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "safe", domain.safe);
     }
 
-    function predeployOpStackALMProxy(OpStackForeignDomain storage domain) internal {
+    function predeployOpStackALMDependencies(OpStackForeignDomain storage domain) internal {
         vm.selectFork(domain.forkId);
 
         vm.startBroadcast();
 
         // Temporarily granting admin role to the deployer for straightforward configuration
-        domain.almProxy = new ALMProxy(msg.sender);
+        domain.almProxy   = new ALMProxy(msg.sender);
+        domain.rateLimits = new RateLimits(msg.sender);
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(domain.name, "almProxy",      address(domain.almProxy));
+        ScriptTools.exportContract(domain.name, "almProxy", address(domain.almProxy));
     }
 
     function setupOpStackALMController(OpStackForeignDomain storage domain) internal {
         vm.selectFork(domain.forkId);
+        address usdc = domain.config.readAddress(".usdc");
 
         vm.startBroadcast();
 
         // Temporarily granting admin role to the deployer for straightforward configuration
         domain.almController = new ForeignController({
-            admin_ : msg.sender,
-            proxy_ : address(domain.almProxy),
-            psm_   : address(domain.psm),
-            usds_  : address(domain.usds),
-            usdc_  : domain.config.readAddress(".usdc"),
-            susds_ : address(domain.susds),
-            cctp_  : domain.config.readAddress(".cctpTokenMessenger")
+            admin_      : msg.sender,
+            proxy_      : address(domain.almProxy),
+            rateLimits_ : address(domain.rateLimits),
+            psm_        : address(domain.psm),
+            usdc_       : usdc,
+            cctp_       : domain.config.readAddress(".cctpTokenMessenger")
         });
 
         domain.almController.grantRole(domain.almController.FREEZER(),            domain.config.readAddress(".freezer"));
@@ -797,12 +825,32 @@ contract SetupAll is Script {
 
         domain.almProxy.grantRole(domain.almProxy.CONTROLLER(),         address(domain.almController));
         domain.almProxy.grantRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), domain.l2BridgeInstance.govRelay);
-
         domain.almProxy.revokeRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), msg.sender);
+
+        domain.rateLimits.setRateLimitData(_makeForeignPSMDepositKey(domain.almController, usdc),  RATE_LIMIT_MAX / 1e12, RATE_LIMIT_SLOPE / 1e12);
+        domain.rateLimits.setRateLimitData(_makeForeignPSMWithdrawKey(domain.almController, usdc), RATE_LIMIT_MAX / 1e12, RATE_LIMIT_SLOPE / 1e12);
+        domain.rateLimits.setRateLimitData(_makeForeignCCTPDomainKey(domain.almController, CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM), RATE_LIMIT_MAX / 1e12, RATE_LIMIT_SLOPE / 1e12);
+        domain.rateLimits.setUnlimitedRateLimitData(domain.almController.LIMIT_USDC_TO_CCTP());
+
+        domain.rateLimits.grantRole(domain.almProxy.CONTROLLER(),          address(domain.almController));
+        domain.rateLimits.grantRole(domain.almProxy.DEFAULT_ADMIN_ROLE(),  domain.l2BridgeInstance.govRelay);
+        domain.rateLimits.revokeRole(domain.almProxy.DEFAULT_ADMIN_ROLE(), msg.sender);
 
         vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "almController", address(domain.almController));
+    }
+
+    function _makeForeignCCTPDomainKey(ForeignController controller, uint32 domainId) internal view returns (bytes32) {
+        return RateLimitHelpers.makeDomainKey(controller.LIMIT_USDC_TO_DOMAIN(), domainId);
+    }
+
+    function _makeForeignPSMDepositKey(ForeignController controller, address asset) internal view returns (bytes32) {
+        return RateLimitHelpers.makeAssetKey(controller.LIMIT_PSM_DEPOSIT(), asset);
+    }
+
+    function _makeForeignPSMWithdrawKey(ForeignController controller, address asset) internal view returns (bytes32) {
+        return RateLimitHelpers.makeAssetKey(controller.LIMIT_PSM_WITHDRAW(), asset);
     }
 
     struct OpStackFarmVars {
@@ -977,8 +1025,8 @@ contract SetupAll is Script {
         mainnet = createEthereumDomain();
         base    = createOpStackForeignDomain("base");
 
-        predeployALMProxy();
-        predeployOpStackALMProxy(base);
+        predeployALMDependencies();
+        predeployOpStackALMDependencies(base);
 
         setupNewTokens();
         setupAllocationSystem();
