@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import { Script }  from "forge-std/Script.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 
-import { Safe }                        from "lib/safe-smart-account/contracts/Safe.sol";
+import { Safe }             from "lib/safe-smart-account/contracts/Safe.sol";
 import { SafeProxyFactory } from "lib/safe-smart-account/contracts/proxies/SafeProxyFactory.sol";
 
 import { MCD, DssInstance } from "lib/dss-test/src/DssTest.sol";
@@ -16,12 +16,11 @@ import { ChainlogAbstract, DSPauseProxyAbstract, WardsAbstract } from "lib/dss-i
 
 import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
-import { Usds }                     from "lib/usds/src/Usds.sol";
-import { UsdsDeploy, UsdsInstance } from "lib/usds/deploy/UsdsDeploy.sol";
-import { UsdsInit }                 from "lib/usds/deploy/UsdsInit.sol";
+import { Usds }         from "lib/usds/src/Usds.sol";
+import { UsdsInstance } from "lib/usds/deploy/UsdsInstance.sol";
 
-import { SUsdsDeploy, SUsdsInstance } from "lib/sdai/deploy/SUsdsDeploy.sol";
-import { SUsdsInit, SUsdsConfig }     from "lib/sdai/deploy/SUsdsInit.sol";
+import { SUsds }         from "lib/sdai/src/SUsds.sol";
+import { SUsdsInstance } from "lib/sdai/deploy/SUsdsInstance.sol";
 
 import {
     AllocatorDeploy,
@@ -53,9 +52,8 @@ import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/Token
 
 import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
-import { Sky }                    from "lib/sky/src/Sky.sol";
-import { SkyDeploy, SkyInstance } from "lib/sky/deploy/SkyDeploy.sol";
-import { SkyInit }                from "lib/sky/deploy/SkyInit.sol";
+import { Sky }         from "lib/sky/src/Sky.sol";
+import { SkyInstance } from "lib/sky/deploy/SkyInstance.sol";
 
 import { DssVest, DssVestMintable } from "src/DssVest.sol";
 
@@ -168,24 +166,7 @@ struct OpStackFarm {
 
 contract SetupMainnetSpell {
 
-    uint256 constant DSR_INITIAL_RATE     = 1000000001847694957439350562;  // 6% APY
     uint256 constant ALLOCATOR_VAULT_RATE = 1000000001547125957863212448;  // 5% APY
-
-    function initTokens(
-        DssInstance memory dss,
-        UsdsInstance memory usdsInstance,
-        SUsdsInstance memory susdsInstance,
-        SkyInstance memory skyInstance,
-        uint256 mkrSkyRate
-    ) external {
-        UsdsInit.init(dss, usdsInstance);
-        SUsdsInit.init(dss, susdsInstance, SUsdsConfig({
-            usdsJoin: usdsInstance.usdsJoin,
-            usds:     usdsInstance.usds,
-            ssr:      DSR_INITIAL_RATE
-        }));
-        SkyInit.init(dss, skyInstance, mkrSkyRate);
-    }
 
     function initAllocator(
         DssInstance memory dss,
@@ -202,7 +183,7 @@ contract SetupMainnetSpell {
             allocatorIlkInstance,
             AllocatorIlkConfig({
                 ilk            : VaultLike(allocatorIlkInstance.vault).ilk(),
-                duty           : DSR_INITIAL_RATE,
+                duty           : ALLOCATOR_VAULT_RATE,
                 gap            : gap,
                 maxLine        : maxLine,
                 ttl            : ttl,
@@ -321,8 +302,6 @@ contract SetupAll is Script {
     using stdJson for string;
     using ScriptTools for string;
 
-    uint256 constant MKR_SKY_CONVERSION_RATE = 24_000;
-
     EthereumDomain mainnet;
 
     OpStackForeignDomain base;
@@ -356,22 +335,22 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         // Deploy phase
-        mainnet.usdsInstance  = UsdsDeploy.deploy(deployer, mainnet.admin, address(mainnet.dss.daiJoin));
-        mainnet.susdsInstance = SUsdsDeploy.deploy(deployer, mainnet.admin, mainnet.usdsInstance.usdsJoin);
-        mainnet.skyInstance   = SkyDeploy.deploy(deployer, mainnet.admin, mainnet.chainlog.getAddress("MCD_GOV"), MKR_SKY_CONVERSION_RATE);
-        mainnet.spk           = new SDAO("Spark", "SPK");
+        mainnet.usdsInstance = UsdsInstance({
+            usds:     mainnet.chainlog.getAddress("USDS"),
+            usdsImp:  mainnet.chainlog.getAddress("USDS_IMP"),
+            usdsJoin: mainnet.chainlog.getAddress("USDS_JOIN"),
+            daiUsds:  mainnet.chainlog.getAddress("DAI_USDS")
+        });
+        mainnet.susdsInstance = SUsdsInstance({
+            sUsds:    mainnet.chainlog.getAddress("SUSDS"),
+            sUsdsImp: mainnet.chainlog.getAddress("SUSDS_IMP")
+        });
+        mainnet.skyInstance = SkyInstance({
+            sky:    mainnet.chainlog.getAddress("SKY"),
+            mkrSky: mainnet.chainlog.getAddress("MKR_SKY")
+        });
+        mainnet.spk = new SDAO("Spark", "SPK");
         ScriptTools.switchOwner(address(mainnet.spk), deployer, mainnet.admin);
-
-        // Initialization phase (needs executing as pause proxy owner)
-        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
-            abi.encodeCall(mainnet.spell.initTokens, (
-                mainnet.dss,
-                mainnet.usdsInstance,
-                mainnet.susdsInstance,
-                mainnet.skyInstance,
-                MKR_SKY_CONVERSION_RATE
-            ))
-        );
 
         vm.stopBroadcast();
 
@@ -540,14 +519,7 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         // SKY Vest
-        mainnet.skyVest = new DssVestMintable(mainnet.skyInstance.sky);
-        ScriptTools.switchOwner(address(mainnet.skyVest), deployer, mainnet.admin);
-        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
-            abi.encodeCall(mainnet.spell.initVest, (
-                mainnet.skyVest,
-                mainnet.skyInstance.sky
-            ))
-        );
+        mainnet.skyVest = DssVest(mainnet.chainlog.getAddress("MCD_VEST_SKY"));
 
         // SPK Vest
         mainnet.spkVest = new DssVestMintable(address(mainnet.spk));
@@ -560,12 +532,11 @@ contract SetupAll is Script {
         );
 
         // Farms
-        mainnet.skyUsdsFarm = _createFarm(
-            mainnet.skyVest,
-            address(mainnet.usdsInstance.usds),
-            mainnet.config.readUint(".farms.skyUsds.total") * 1e18,
-            mainnet.config.readUint(".farms.skyUsds.duration")
-        );
+        mainnet.skyUsdsFarm = Farm({
+            vest:         DssVest(mainnet.chainlog.getAddress("MCD_VEST_SKY")),
+            rewards:      StakingRewards(mainnet.chainlog.getAddress("REWARDS_USDS_SKY")),
+            distribution: VestedRewardsDistribution(mainnet.chainlog.getAddress("REWARDS_DIST_USDS_SKY"))
+        });
         mainnet.spkUsdsFarm = _createFarm(
             mainnet.spkVest,
             address(mainnet.usdsInstance.usds),

@@ -120,41 +120,6 @@ contract SetupAllTest is Test {
         assertEq(usds.balanceOf(address(almProxy)), 0);
     }
 
-    function test_sky_usds_farm() public {
-        VestedRewardsDistribution distribution = VestedRewardsDistribution(outputMainnet.readAddress(".skyUsdsFarmDistribution"));
-        StakingRewards rewards = StakingRewards(outputMainnet.readAddress(".skyUsdsFarmRewards"));
-
-        deal(address(usds), address(this), 300e18);
-        usds.approve(address(rewards), 300e18);
-
-        // Accrue a bunch of rewards (numbers dont matter that much)
-        vm.warp(skyVest.bgn(1));
-        rewards.stake(100e18);
-        skip(7 days);
-        distribution.distribute();
-        skip(7 days);
-        rewards.stake(100e18);
-        distribution.distribute();
-        skip(7 days);
-        rewards.stake(100e18);
-        distribution.distribute();
-        skip(7 days);
-        distribution.distribute();
-        
-        uint256 amountEarned = 466_666.666666666665897600e18;
-
-        assertEq(rewards.earned(address(this)), amountEarned);
-        assertEq(sky.totalSupply(),             622_222.222222222222222222e18);
-        assertEq(usds.balanceOf(address(this)), 0);
-        assertEq(sky.balanceOf(address(this)),  0);
-
-        // Pull my rewards
-        rewards.exit();
-        
-        assertEq(usds.balanceOf(address(this)), 300e18);
-        assertEq(sky.balanceOf(address(this)),  amountEarned);
-    }
-
     function test_spk_usds_farm() public {
         VestedRewardsDistribution distribution = VestedRewardsDistribution(outputMainnet.readAddress(".spkUsdsFarmDistribution"));
         StakingRewards rewards = StakingRewards(outputMainnet.readAddress(".spkUsdsFarmRewards"));
