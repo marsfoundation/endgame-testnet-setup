@@ -472,6 +472,7 @@ contract SetupAll is Script {
         vm.stopBroadcast();
 
         ScriptTools.exportContract(mainnet.name, "almProxy", address(mainnet.almProxy));
+        ScriptTools.exportContract(mainnet.name, "rateLimits", address(mainnet.rateLimits));
     }
 
     function setupALMController() internal {
@@ -798,6 +799,7 @@ contract SetupAll is Script {
         vm.stopBroadcast();
 
         ScriptTools.exportContract(domain.name, "almProxy", address(domain.almProxy));
+        ScriptTools.exportContract(domain.name, "rateLimits", address(domain.rateLimits));
     }
 
     function setupOpStackALMController(OpStackForeignDomain storage domain) internal {

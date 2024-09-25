@@ -17,6 +17,7 @@ import { SDAO } from "lib/endgame-toolkit/src/SDAO.sol";
 
 import { MainnetController } from "lib/spark-alm-controller/src/MainnetController.sol";
 import { ALMProxy }          from "lib/spark-alm-controller/src/ALMProxy.sol";
+import { RateLimits }        from "lib/spark-alm-controller/src/RateLimits.sol";
 
 import { DssVest } from "src/DssVest.sol";
 
@@ -47,6 +48,7 @@ contract SetupAllTest is Test {
 
     MainnetController mainnetController;
     ALMProxy almProxy;
+    RateLimits rateLimits;
 
     DssVest skyVest;
     DssVest spkVest;
@@ -73,6 +75,7 @@ contract SetupAllTest is Test {
         
         mainnetController = MainnetController(outputMainnet.readAddress(".almController"));
         almProxy          = ALMProxy(outputMainnet.readAddress(".almProxy"));
+        rateLimits        = RateLimits(outputMainnet.readAddress(".rateLimits"));
 
         skyVest = DssVest(outputMainnet.readAddress(".skyVest"));
         spkVest = DssVest(outputMainnet.readAddress(".spkVest"));
@@ -101,10 +104,14 @@ contract SetupAllTest is Test {
     }
 
     function test_mintUSDS() public {
-        uint256 usdsValue = 1e18;
+        uint256 usdsValue = 1_000_000e18;
+
+        assertEq(rateLimits.getCurrentRateLimit(mainnetController.LIMIT_USDS_MINT()), 5_000_000e18);
 
         vm.prank(safe);
         mainnetController.mintUSDS(usdsValue);
+
+        assertEq(rateLimits.getCurrentRateLimit(mainnetController.LIMIT_USDS_MINT()), 4_000_000e18);
 
         assertEq(usds.balanceOf(address(almProxy)), usdsValue);
     }
