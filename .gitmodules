@@ -52,3 +52,9 @@
 [submodule "lib/op-farms"]
 	path = lib/op-farms
 	url = https://github.com/makerdao/op-farms
+[submodule "lib/arbitrum-token-bridge"]
+	path = lib/arbitrum-token-bridge
+	url = https://github.com/makerdao/arbitrum-token-bridge
+[submodule "lib/arbitrum-farms"]
+	path = lib/arbitrum-farms
+	url = https://github.com/makerdao/arbitrum-farms

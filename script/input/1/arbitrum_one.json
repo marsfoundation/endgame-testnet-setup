@@ -1,0 +1,29 @@
+{
+    "usdc": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "admin": "0x10E6593CDda8c58a1d0f14C5164B376352a55f2F",
+    "chainlogPrefix": "ARBITRUM",
+    "freezer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+    "relayer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+    "safeProxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+    "safeSingleton": "0x41675C099F32341bf84BFc5382aF534df5C7461a",
+    "cctpTokenMessenger": "0x1682Ae6375C4E4A97e4B583BC394c861A46D8962",
+    "farms": {
+      "skyUsds": {
+        "total": 2000000,
+        "duration": 7776000
+      },
+      "spkUsds": {
+        "total": 100000000,
+        "duration": 63072000
+      },
+      "skySpk": {
+        "total": 1000000,
+        "duration": 7776000
+      },
+      "spkSky": {
+        "total": 50000000,
+        "duration": 63072000
+      }
+    }
+  }
+  

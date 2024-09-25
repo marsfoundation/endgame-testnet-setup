@@ -41,14 +41,20 @@ import { MainnetController } from "lib/spark-alm-controller/src/MainnetControlle
 
 import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
 import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
+import { ArbitrumReceiver }            from "lib/xchain-helpers/src/receivers/ArbitrumReceiver.sol";
 import { DSRAuthOracle, IDSROracle }   from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
 
 import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
+import { ArbitrumForwarder } from "lib/xchain-helpers/src/forwarders/ArbitrumForwarder.sol";
 
 import { L1TokenBridgeInstance }          from "lib/op-token-bridge/deploy/L1TokenBridgeInstance.sol";
 import { L2TokenBridgeInstance }          from "lib/op-token-bridge/deploy/L2TokenBridgeInstance.sol";
 import { TokenBridgeDeploy }              from "lib/op-token-bridge/deploy/TokenBridgeDeploy.sol";
 import { TokenBridgeInit, BridgesConfig } from "lib/op-token-bridge/deploy/TokenBridgeInit.sol";
+
+import { L2TokenGatewayInstance } from "lib/arbitrum-token-bridge/deploy/L2TokenGatewayInstance.sol";
+import { TokenGatewayDeploy } from "lib/arbitrum-token-bridge/deploy/TokenGatewayDeploy.sol";
+import { TokenGatewayInit, GatewaysConfig, MessageParams } from "lib/arbitrum-token-bridge/deploy/TokenGatewayInit.sol";
 
 import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
@@ -61,10 +67,21 @@ import { VestedRewardsDistribution } from "lib/endgame-toolkit/src/VestedRewards
 import { StakingRewards }            from "lib/endgame-toolkit/src/synthetix/StakingRewards.sol";
 import { SDAO }                      from "lib/endgame-toolkit/src/SDAO.sol";
 
-import { FarmProxyDeploy }                from "lib/op-farms/deploy/FarmProxyDeploy.sol";
-import { FarmProxyInit, ProxiesConfig }   from "lib/op-farms/deploy/FarmProxyInit.sol";
-import { L1FarmProxy }                    from "lib/op-farms/src/L1FarmProxy.sol";
-import { L2FarmProxy }                    from "lib/op-farms/src/L2FarmProxy.sol";
+import { FarmProxyDeploy as OptimismFarmProxyDeploy } from "lib/op-farms/deploy/FarmProxyDeploy.sol";
+import {
+    FarmProxyInit as OptimismFarmProxyInit,
+    ProxiesConfig as OptimismProxiesConfig
+} from "lib/op-farms/deploy/FarmProxyInit.sol";
+import { L1FarmProxy as OptimismL1FarmProxy } from "lib/op-farms/src/L1FarmProxy.sol";
+import { L2FarmProxy as OptimismL2FarmProxy } from "lib/op-farms/src/L2FarmProxy.sol";
+
+import { FarmProxyDeploy as ArbitrumFarmProxyDeploy } from "lib/arbitrum-farms/deploy/FarmProxyDeploy.sol";
+import {
+    FarmProxyInit as ArbitrumFarmProxyInit,
+    ProxiesConfig as ArbitrumProxiesConfig
+} from "lib/arbitrum-farms/deploy/FarmProxyInit.sol";
+import { L1FarmProxy as ArbitrumL1FarmProxy } from "lib/arbitrum-farms/src/L1FarmProxy.sol";
+import { L2FarmProxy as ArbitrumL2FarmProxy } from "lib/arbitrum-farms/src/L2FarmProxy.sol";
 
 interface ISparkProxy {
     function exec(address target, bytes calldata data) external;
@@ -149,6 +166,44 @@ struct OpStackForeignDomain {
     OpStackFarm spkSkyFarm;
 }
 
+struct ArbStackForeignDomain {
+    string  name;
+    string  config;
+    uint256 forkId;
+    address admin;
+
+    // L2 versions of the tokens
+    Usds    usds;
+    address usdsImp;
+    Usds    susds;
+    address susdsImp;
+    Sky     sky;
+    SDAO    spk;
+
+    // Token Gateway
+    address l1Gateway;
+    L2TokenGatewayInstance l2GatewayInstance;
+
+    // ALM Controller
+    address           safe;
+    ForeignController almController;
+    ALMProxy          almProxy;
+
+    // PSM
+    PSM3 psm;
+
+    // XChain DSR Oracle
+    address          dsrForwarder;  // On Mainnet
+    OptimismReceiver dsrReceiver;
+    DSRAuthOracle    dsrOracle;
+
+    // Farms
+    ArbStackFarm skyUsdsFarm;
+    ArbStackFarm spkUsdsFarm;
+    ArbStackFarm skySpkFarm;
+    ArbStackFarm spkSkyFarm;
+}
+
 struct Farm {
     DssVest                   vest;
     StakingRewards            rewards;
@@ -159,8 +214,17 @@ struct OpStackFarm {
     DssVest                   vest;
     StakingRewards            rewards;
     VestedRewardsDistribution distribution;
-    L1FarmProxy               l1Proxy;
-    L2FarmProxy               l2Proxy;
+    OptimismL1FarmProxy       l1Proxy;
+    OptimismL2FarmProxy       l2Proxy;
+    address                   l2Spell;
+}
+
+struct ArbStackFarm {
+    DssVest                   vest;
+    StakingRewards            rewards;
+    VestedRewardsDistribution distribution;
+    ArbitrumL1FarmProxy       l1Proxy;
+    ArbitrumL2FarmProxy       l2Proxy;
     address                   l2Spell;
 }
 
@@ -283,11 +347,36 @@ contract SetupMainnetSpell {
         DssInstance memory dss,
         OpStackForeignDomain memory domain,
         OpStackFarm memory farm,
-        ProxiesConfig memory cfg
+        OptimismProxiesConfig memory cfg
     ) external {
-        FarmProxyInit.initProxies(
+        OptimismFarmProxyInit.initProxies(
             dss,
             domain.l1BridgeInstance.govRelay,
+            address(farm.l1Proxy),
+            address(farm.l2Proxy),
+            farm.l2Spell,
+            cfg
+        );
+    }
+
+    function initArbStackTokenBridge(
+        DssInstance memory dss,
+        address l1Gateway,
+        L2TokenGatewayInstance memory l2GatewayInstance,
+        GatewaysConfig memory cfg
+    ) external {
+        TokenGatewayInit.initGateways(dss, l1Gateway, l2GatewayInstance, cfg);
+    }
+
+    function initArbStackFarm(
+        DssInstance memory dss,
+        ArbStackForeignDomain memory domain,
+        ArbStackFarm memory farm,
+        ArbitrumProxiesConfig memory cfg
+    ) external {
+        ArbitrumFarmProxyInit.initProxies(
+            dss,
+            domain.l1Gateway,
             address(farm.l1Proxy),
             address(farm.l2Proxy),
             farm.l2Spell,
@@ -304,7 +393,8 @@ contract SetupAll is Script {
 
     EthereumDomain mainnet;
 
-    OpStackForeignDomain base;
+    OpStackForeignDomain  base;
+    ArbStackForeignDomain arbitrum;
 
     address deployer;
 
@@ -327,6 +417,13 @@ contract SetupAll is Script {
         domain.name   = name;
         domain.config = ScriptTools.loadConfig(name);
         domain.forkId = vm.createFork(getChain(name).rpcUrl);
+    }
+
+    function createArbStackForeignDomain(string memory name) internal returns (ArbStackForeignDomain memory domain) {
+        domain.name   = name;
+        domain.config = ScriptTools.loadConfig(name);
+        domain.forkId = vm.createFork(getChain(name).rpcUrl);
+        domain.admin  = domain.config.readAddress(".admin");
     }
 
     function setupNewTokens() internal {
@@ -628,6 +725,7 @@ contract SetupAll is Script {
             domain.l1BridgeInstance.bridge,
             l2CrossDomain
         );
+        domain.admin = domain.l2BridgeInstance.govRelay;
 
         (domain.usds, domain.usdsImp)   = _deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
         (domain.susds, domain.susdsImp) = _deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
@@ -808,7 +906,7 @@ contract SetupAll is Script {
     struct OpStackFarmVars {
         address rewardsTokenL1;
         address l2ProxyExpectedAddress;
-        ProxiesConfig cfg;
+        OptimismProxiesConfig cfg;
     }
 
     function _createOpStackFarm(
@@ -825,7 +923,7 @@ contract SetupAll is Script {
         OpStackFarmVars memory vars = OpStackFarmVars({
             rewardsTokenL1: address(DssVestMintable(address(vest)).gem()),
             l2ProxyExpectedAddress: _getDeploymentAddress(domain.forkId, 1),
-            cfg: ProxiesConfig({
+            cfg: OptimismProxiesConfig({
                 vest: address(vest),
                 vestTot: total,
                 vestBgn: block.timestamp,
@@ -849,7 +947,7 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         // Deploy
-        farm.l1Proxy = L1FarmProxy(FarmProxyDeploy.deployL1Proxy(
+        farm.l1Proxy = OptimismL1FarmProxy(OptimismFarmProxyDeploy.deployL1Proxy(
             deployer,
             mainnet.admin,
             vars.rewardsTokenL1,
@@ -873,13 +971,13 @@ contract SetupAll is Script {
             stakingTokenL2
         );
         vars.cfg.farm = address(farm.rewards);
-        farm.l2Proxy = L2FarmProxy(FarmProxyDeploy.deployL2Proxy(
+        farm.l2Proxy = OptimismL2FarmProxy(OptimismFarmProxyDeploy.deployL2Proxy(
             deployer,
             domain.l2BridgeInstance.govRelay,
             address(farm.rewards)
         ));
         require(address(farm.l2Proxy) == vars.l2ProxyExpectedAddress, "addr mismatch");
-        farm.l2Spell = FarmProxyDeploy.deployL2ProxySpell();
+        farm.l2Spell = OptimismFarmProxyDeploy.deployL2ProxySpell();
 
         vm.stopBroadcast();
         vm.selectFork(mainnet.forkId);
@@ -968,14 +1066,117 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "spkSkyFarmL2Spell",      domain.spkSkyFarm.l2Spell);
     }
 
+    function setupArbStackTokenBridge(ArbStackForeignDomain storage domain) internal {
+        address l1CrossDomain;
+        if (domain.name.eq("arbitrum")) {
+            l1CrossDomain = ArbitrumForwarder.L1_CROSS_DOMAIN_ARBITRUM_ONE;
+        } else {
+            revert("Unsupported domain");
+        }
+        address l2CrossDomain = ArbitrumForwarder.L2_CROSS_DOMAIN;  // Always the same
+
+        vm.selectFork(domain.forkId);
+
+        // Pre-compute L2 deployment addresses
+        uint256 nonce = vm.getNonce(deployer);
+
+        // Mainnet deploy
+
+        vm.selectFork(mainnet.forkId);
+
+        vm.startBroadcast();
+
+        domain.l1Gateway = TokenGatewayDeploy.deployL1Gateway(
+            deployer,
+            mainnet.admin,
+            vm.computeCreateAddress(deployer, nonce),
+            vm.computeCreateAddress(deployer, nonce + 1),
+            l1CrossDomain
+        );
+
+        vm.stopBroadcast();
+
+        // L2 deploy
+
+        vm.selectFork(domain.forkId);
+
+        vm.startBroadcast();
+
+        domain.l2GatewayInstance = TokenGatewayDeploy.deployL2Gateway(
+            deployer,
+            domain.admin,
+            domain.l1Gateway,
+            l2CrossDomain
+        );
+
+        (domain.usds, domain.usdsImp)   = _deployUsdsInstance(deployer, domain.admin);
+        (domain.susds, domain.susdsImp) = _deployUsdsInstance(deployer, domain.admin);
+        domain.sky = new Sky();
+        ScriptTools.switchOwner(address(domain.sky), deployer, domain.admin);
+        domain.spk = new SDAO("Spark", "SPK");
+        ScriptTools.switchOwner(address(domain.spk), deployer, domain.admin);
+
+        vm.stopBroadcast();
+
+        // Initialization spell
+
+        vm.selectFork(mainnet.forkId);
+
+        vm.startBroadcast();
+
+        address[] memory l1Tokens = new address[](4);
+        l1Tokens[0] = mainnet.usdsInstance.usds;
+        l1Tokens[1] = mainnet.susdsInstance.sUsds;
+        l1Tokens[2] = mainnet.skyInstance.sky;
+        l1Tokens[3] = address(mainnet.spk);
+
+        address[] memory l2Tokens = new address[](4);
+        l2Tokens[0] = address(domain.usds);
+        l2Tokens[1] = address(domain.susds);
+        l2Tokens[2] = address(domain.sky);
+        l2Tokens[3] = address(domain.spk);
+
+        DSPauseProxyAbstract(mainnet.admin).exec(address(mainnet.spell),
+            abi.encodeCall(mainnet.spell.initArbStackTokenBridge, (
+                mainnet.dss,
+                domain.l1Gateway,
+                domain.l2GatewayInstance,
+                GatewaysConfig({
+                    l1Router : l1CrossDomain,
+                    inbox    : l2CrossDomain,
+                    l1Tokens : l1Tokens,
+                    l2Tokens : l2Tokens,
+                    xchainMsg: MessageParams({
+                        maxGas: 5_000_000,
+                        gasPriceBid: 1 gwei,
+                        maxSubmissionCost: 1 ether
+                    })
+                })
+            ))
+        );
+
+        vm.stopBroadcast();
+
+        ScriptTools.exportContract(domain.name, "usds",          address(domain.usds));
+        ScriptTools.exportContract(domain.name, "usdsImp",       domain.usdsImp);
+        ScriptTools.exportContract(domain.name, "sUsds",         address(domain.susds));
+        ScriptTools.exportContract(domain.name, "sUsdsImp",      domain.susdsImp);
+        ScriptTools.exportContract(domain.name, "sky",           address(domain.sky));
+        ScriptTools.exportContract(domain.name, "spk",           address(domain.spk));
+        ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1Gateway);
+        ScriptTools.exportContract(domain.name, "govRelay",      domain.admin);
+        ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2GatewayInstance.gateway);
+    }
+
     function run() public {
         vm.setEnv("FOUNDRY_ROOT_CHAINID", "1");
         vm.setEnv("FOUNDRY_EXPORTS_OVERWRITE_LATEST", "true");
 
         deployer = msg.sender;
 
-        mainnet = createEthereumDomain();
-        base    = createOpStackForeignDomain("base");
+        mainnet  = createEthereumDomain();
+        base     = createOpStackForeignDomain("base");
+        arbitrum = createArbStackForeignDomain("arbitrum_one");
 
         predeployALMProxy();
         predeployOpStackALMProxy(base);
@@ -992,6 +1193,13 @@ contract SetupAll is Script {
         setupOpStackSafe(base);
         setupOpStackALMController(base);
         setupOpStackFarms(base);
+
+        setupArbStackTokenBridge(arbitrum);
+        //setupArbStackCrossChainDSROracle(arbitrum);
+        //setupArbStackForeignPSM(arbitrum);
+        //setupArbStackSafe(arbitrum);
+        //setupArbStackALMController(arbitrum);
+        //setupArbStackFarms(arbitrum);
     }
 
     function _getDeploymentAddress(uint256 forkId, uint256 delta) internal returns (address addr) {
