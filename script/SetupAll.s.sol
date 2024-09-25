@@ -41,10 +41,6 @@ import { MainnetController } from "lib/spark-alm-controller/src/MainnetControlle
 import { RateLimits }        from "lib/spark-alm-controller/src/RateLimits.sol";
 import { RateLimitHelpers }  from "lib/spark-alm-controller/src/RateLimitHelpers.sol";
 
-import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
-import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
-import { DSRAuthOracle, IDSROracle }   from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
-
 import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
 import { CCTPForwarder }     from "lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
 
@@ -141,11 +137,6 @@ struct OpStackForeignDomain {
 
     // PSM
     PSM3 psm;
-
-    // XChain DSR Oracle
-    address          dsrForwarder;  // On Mainnet
-    OptimismReceiver dsrReceiver;
-    DSRAuthOracle    dsrOracle;
 
     // Farms
     OpStackFarm skyUsdsFarm;
@@ -719,41 +710,6 @@ contract SetupAll is Script {
         ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2BridgeInstance.bridge);
     }
 
-    function setupOpStackCrossChainDSROracle(OpStackForeignDomain storage domain) internal {
-        vm.selectFork(mainnet.forkId);
-
-        vm.startBroadcast();
-
-        address expectedReceiver = vm.computeCreateAddress(deployer, 2);
-        if (domain.name.eq("base")) {
-            domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.susdsInstance.sUsds), expectedReceiver));
-        } else {
-            revert("Unsupported domain");
-        }
-
-        vm.stopBroadcast();
-        vm.selectFork(domain.forkId);
-        vm.startBroadcast();
-
-        domain.dsrOracle   = new DSRAuthOracle();
-        domain.dsrReceiver = new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle));
-        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
-        // FIXME: this is being set manually, but needs to be initialized for real when in production
-        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
-        domain.dsrOracle.setPotData(IDSROracle.PotData({
-            dsr: 1e27,
-            chi: 1e27,
-            rho: uint40(block.timestamp)
-        }));
-        domain.dsrOracle.revokeRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
-
-        vm.stopBroadcast();
-
-        ScriptTools.exportContract(domain.name, "l1DSRForwarder", domain.dsrForwarder);
-        ScriptTools.exportContract(domain.name, "dsrReceiver",    address(domain.dsrReceiver));
-        ScriptTools.exportContract(domain.name, "dsrOracle",      address(domain.dsrOracle));
-    }
-
     function setupOpStackForeignPSM(OpStackForeignDomain storage domain) internal {
         vm.selectFork(domain.forkId);
 
@@ -763,7 +719,7 @@ contract SetupAll is Script {
             domain.config.readAddress(".usdc"),
             address(domain.usds),
             address(domain.susds),
-            address(domain.dsrOracle)
+            domain.config.readAddress(".ssrOracle")
         );
 
         vm.stopBroadcast();
@@ -1037,7 +993,6 @@ contract SetupAll is Script {
         setupFarms();
 
         setupOpStackTokenBridge(base);
-        setupOpStackCrossChainDSROracle(base);
         setupOpStackForeignPSM(base);
         setupOpStackSafe(base);
         setupOpStackALMController(base);
