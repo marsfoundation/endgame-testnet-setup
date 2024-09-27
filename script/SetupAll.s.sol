@@ -10,17 +10,16 @@ import { SafeProxyFactory } from "lib/safe-smart-account/contracts/proxies/SafeP
 import { MCD, DssInstance } from "lib/dss-test/src/DssTest.sol";
 import { ScriptTools }      from "lib/dss-test/src/ScriptTools.sol";
 
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
 import { ChainlogAbstract, DSPauseProxyAbstract, WardsAbstract } from "lib/dss-interfaces/src/Interfaces.sol";
 
 import { Ethereum } from "lib/spark-address-registry/src/Ethereum.sol";
 
-import { Usds }         from "lib/usds/src/Usds.sol";
-import { UsdsInstance } from "lib/usds/deploy/UsdsInstance.sol";
+import { Usds }                         from "lib/usds/src/Usds.sol";
+import { UsdsInstance, UsdsL2Instance } from "lib/usds/deploy/UsdsInstance.sol";
+import { UsdsDeploy }                   from "lib/usds/deploy/UsdsDeploy.sol";
 
-import { SUsds }         from "lib/sdai/src/SUsds.sol";
-import { SUsdsInstance } from "lib/sdai/deploy/SUsdsInstance.sol";
+import { SUsds }                      from "lib/sdai/src/SUsds.sol";
+import { SUsdsDeploy, SUsdsInstance } from "lib/sdai/deploy/l2/SUsdsDeploy.sol";
 
 import {
     AllocatorDeploy,
@@ -41,10 +40,6 @@ import { MainnetController } from "lib/spark-alm-controller/src/MainnetControlle
 import { RateLimits }        from "lib/spark-alm-controller/src/RateLimits.sol";
 import { RateLimitHelpers }  from "lib/spark-alm-controller/src/RateLimitHelpers.sol";
 
-import { DSROracleForwarderBaseChain } from "lib/xchain-dsr-oracle/src/forwarders/DSROracleForwarderBaseChain.sol";
-import { OptimismReceiver }            from "lib/xchain-helpers/src/receivers/OptimismReceiver.sol";
-import { DSRAuthOracle, IDSROracle }   from "lib/xchain-dsr-oracle/src/DSRAuthOracle.sol";
-
 import { OptimismForwarder } from "lib/xchain-helpers/src/forwarders/OptimismForwarder.sol";
 import { CCTPForwarder }     from "lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
 
@@ -57,6 +52,7 @@ import { PSM3 } from "lib/spark-psm/src/PSM3.sol";
 
 import { Sky }         from "lib/sky/src/Sky.sol";
 import { SkyInstance } from "lib/sky/deploy/SkyInstance.sol";
+import { SkyDeploy }   from "lib/sky/deploy/SkyDeploy.sol";
 
 import { DssVest, DssVestMintable } from "src/DssVest.sol";
 
@@ -122,12 +118,10 @@ struct OpStackForeignDomain {
     address admin;
 
     // L2 versions of the tokens
-    Usds    usds;
-    address usdsImp;
-    Usds    susds;
-    address susdsImp;
-    Sky     sky;
-    SDAO    spk;
+    UsdsL2Instance usdsInstance;
+    SUsdsInstance  susdsInstance;
+    address        sky;
+    address        spk;
 
     // Token Bridge
     L1TokenBridgeInstance l1BridgeInstance;
@@ -141,11 +135,6 @@ struct OpStackForeignDomain {
 
     // PSM
     PSM3 psm;
-
-    // XChain DSR Oracle
-    address          dsrForwarder;  // On Mainnet
-    OptimismReceiver dsrReceiver;
-    DSRAuthOracle    dsrOracle;
 
     // Farms
     OpStackFarm skyUsdsFarm;
@@ -602,18 +591,6 @@ contract SetupAll is Script {
         ScriptTools.exportContract(mainnet.name, "spkSkyFarmRewards",      address(mainnet.spkSkyFarm.rewards));
     }
 
-    // Deploy an instance of USDS which will closely resemble the L2 versions of the tokens
-    // TODO: This should be replaced by the actual tokens when they are available
-    function _deployUsdsInstance(
-        address _deployer,
-        address _owner
-    ) internal returns (Usds instance, address implementation) {
-        address _usdsImp = address(new Usds());
-        address _usds = address((new ERC1967Proxy(_usdsImp, abi.encodeCall(Usds.initialize, ()))));
-        ScriptTools.switchOwner(_usds, _deployer, _owner);
-        return (Usds(_usds), _usdsImp);
-    }
-
     function setupOpStackTokenBridge(OpStackForeignDomain storage domain) internal {
         address l1CrossDomain;
         if (domain.name.eq("base")) {
@@ -657,12 +634,11 @@ contract SetupAll is Script {
             l2CrossDomain
         );
 
-        (domain.usds, domain.usdsImp)   = _deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
-        (domain.susds, domain.susdsImp) = _deployUsdsInstance(deployer, domain.l2BridgeInstance.govRelay);
-        domain.sky = new Sky();
-        ScriptTools.switchOwner(address(domain.sky), deployer, domain.l2BridgeInstance.govRelay);
-        domain.spk = new SDAO("Spark", "SPK");
-        ScriptTools.switchOwner(address(domain.spk), deployer, domain.l2BridgeInstance.govRelay);
+        domain.usdsInstance = UsdsDeploy.deployL2(deployer, domain.l2BridgeInstance.govRelay);
+        domain.susdsInstance = SUsdsDeploy.deploy(deployer, domain.l2BridgeInstance.govRelay);
+        domain.sky = SkyDeploy.deployL2(deployer, domain.l2BridgeInstance.govRelay);
+        domain.spk = address(new SDAO("Spark", "SPK"));
+        ScriptTools.switchOwner(domain.spk, deployer, domain.l2BridgeInstance.govRelay);
 
         vm.stopBroadcast();
 
@@ -679,8 +655,8 @@ contract SetupAll is Script {
         l1Tokens[3] = address(mainnet.spk);
 
         address[] memory l2Tokens = new address[](4);
-        l2Tokens[0] = address(domain.usds);
-        l2Tokens[1] = address(domain.susds);
+        l2Tokens[0] = address(domain.usdsInstance.usds);
+        l2Tokens[1] = address(domain.susdsInstance.sUsds);
         l2Tokens[2] = address(domain.sky);
         l2Tokens[3] = address(domain.spk);
 
@@ -706,52 +682,17 @@ contract SetupAll is Script {
 
         vm.stopBroadcast();
 
-        ScriptTools.exportContract(domain.name, "usds",          address(domain.usds));
-        ScriptTools.exportContract(domain.name, "usdsImp",       domain.usdsImp);
-        ScriptTools.exportContract(domain.name, "sUsds",         address(domain.susds));
-        ScriptTools.exportContract(domain.name, "sUsdsImp",      domain.susdsImp);
-        ScriptTools.exportContract(domain.name, "sky",           address(domain.sky));
-        ScriptTools.exportContract(domain.name, "spk",           address(domain.spk));
+        ScriptTools.exportContract(domain.name, "usds",          domain.usdsInstance.usds);
+        ScriptTools.exportContract(domain.name, "usdsImp",       domain.usdsInstance.usdsImp);
+        ScriptTools.exportContract(domain.name, "sUsds",         domain.susdsInstance.sUsds);
+        ScriptTools.exportContract(domain.name, "sUsdsImp",      domain.susdsInstance.sUsdsImp);
+        ScriptTools.exportContract(domain.name, "sky",           domain.sky);
+        ScriptTools.exportContract(domain.name, "spk",           domain.spk);
         ScriptTools.exportContract(domain.name, "l1GovRelay",    domain.l1BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "l1Escrow",      domain.l1BridgeInstance.escrow);
         ScriptTools.exportContract(domain.name, "l1TokenBridge", domain.l1BridgeInstance.bridge);
         ScriptTools.exportContract(domain.name, "govRelay",      domain.l2BridgeInstance.govRelay);
         ScriptTools.exportContract(domain.name, "tokenBridge",   domain.l2BridgeInstance.bridge);
-    }
-
-    function setupOpStackCrossChainDSROracle(OpStackForeignDomain storage domain) internal {
-        vm.selectFork(mainnet.forkId);
-
-        vm.startBroadcast();
-
-        address expectedReceiver = vm.computeCreateAddress(deployer, 2);
-        if (domain.name.eq("base")) {
-            domain.dsrForwarder = address(new DSROracleForwarderBaseChain(address(mainnet.susdsInstance.sUsds), expectedReceiver));
-        } else {
-            revert("Unsupported domain");
-        }
-
-        vm.stopBroadcast();
-        vm.selectFork(domain.forkId);
-        vm.startBroadcast();
-
-        domain.dsrOracle   = new DSRAuthOracle();
-        domain.dsrReceiver = new OptimismReceiver(domain.dsrForwarder, address(domain.dsrOracle));
-        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), address(domain.dsrReceiver));
-        // FIXME: this is being set manually, but needs to be initialized for real when in production
-        domain.dsrOracle.grantRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
-        domain.dsrOracle.setPotData(IDSROracle.PotData({
-            dsr: 1e27,
-            chi: 1e27,
-            rho: uint40(block.timestamp)
-        }));
-        domain.dsrOracle.revokeRole(domain.dsrOracle.DATA_PROVIDER_ROLE(), deployer);
-
-        vm.stopBroadcast();
-
-        ScriptTools.exportContract(domain.name, "l1DSRForwarder", domain.dsrForwarder);
-        ScriptTools.exportContract(domain.name, "dsrReceiver",    address(domain.dsrReceiver));
-        ScriptTools.exportContract(domain.name, "dsrOracle",      address(domain.dsrOracle));
     }
 
     function setupOpStackForeignPSM(OpStackForeignDomain storage domain) internal {
@@ -761,9 +702,9 @@ contract SetupAll is Script {
 
         domain.psm = new PSM3(
             domain.config.readAddress(".usdc"),
-            address(domain.usds),
-            address(domain.susds),
-            address(domain.dsrOracle)
+            domain.usdsInstance.usds,
+            domain.susdsInstance.sUsds,
+            domain.config.readAddress(".ssrOracle")
         );
 
         vm.stopBroadcast();
@@ -953,8 +894,8 @@ contract SetupAll is Script {
         domain.skyUsdsFarm = _createOpStackFarm(
             domain,
             mainnet.skyVest,
-            address(domain.usds),
-            address(domain.sky),
+            domain.usdsInstance.usds,
+            domain.sky,
             domain.config.readUint(".farms.skyUsds.total") * 1e18,
             domain.config.readUint(".farms.skyUsds.duration"),
             "SKY-USDS"
@@ -964,8 +905,8 @@ contract SetupAll is Script {
         domain.spkUsdsFarm = _createOpStackFarm(
             domain,
             mainnet.spkVest,
-            address(domain.usds),
-            address(domain.spk),
+            domain.usdsInstance.usds,
+            domain.spk,
             domain.config.readUint(".farms.spkUsds.total") * 1e18,
             domain.config.readUint(".farms.spkUsds.duration"),
             "SPK-USDS"
@@ -975,8 +916,8 @@ contract SetupAll is Script {
         domain.skySpkFarm = _createOpStackFarm(
             domain,
             mainnet.skyVest,
-            address(domain.spk),
-            address(domain.sky),
+            domain.spk,
+            domain.sky,
             domain.config.readUint(".farms.skySpk.total") * 1e18,
             domain.config.readUint(".farms.skySpk.duration"),
             "SKY-SPK"
@@ -986,8 +927,8 @@ contract SetupAll is Script {
         domain.spkSkyFarm = _createOpStackFarm(
             domain,
             mainnet.spkVest,
-            address(domain.sky),
-            address(domain.spk),
+            domain.sky,
+            domain.spk,
             domain.config.readUint(".farms.spkSky.total") * 1e18,
             domain.config.readUint(".farms.spkSky.duration"),
             "SPK-SKY"
@@ -1037,7 +978,6 @@ contract SetupAll is Script {
         setupFarms();
 
         setupOpStackTokenBridge(base);
-        setupOpStackCrossChainDSROracle(base);
         setupOpStackForeignPSM(base);
         setupOpStackSafe(base);
         setupOpStackALMController(base);
