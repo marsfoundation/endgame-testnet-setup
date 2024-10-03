@@ -97,7 +97,7 @@ contract SetupAllTest is Test {
         base       = getChain("base").createFork();
         bridge     = OptimismBridgeTesting.createNativeBridge(mainnet, base);
         cctpBridge = CCTPBridgeTesting.createCircleBridge(mainnet, base);
-        
+
         outputMainnet = ScriptTools.readOutput("mainnet");
         inputBase = ScriptTools.readInput("base");
         outputBase = ScriptTools.readOutput("base");
@@ -112,9 +112,9 @@ contract SetupAllTest is Test {
 
         allocatorVault = AllocatorVault(outputMainnet.readAddress(".allocatorVault"));
         allocatorBuffer = AllocatorBuffer(outputMainnet.readAddress(".allocatorBuffer"));
-        
+
         mainnetController = MainnetController(outputMainnet.readAddress(".almController"));
-        almProxy          = ALMProxy(outputMainnet.readAddress(".almProxy"));
+        almProxy          = ALMProxy(payable(outputMainnet.readAddress(".almProxy")));
         rateLimits        = RateLimits(outputMainnet.readAddress(".rateLimits"));
 
         skyVest = DssVest(outputMainnet.readAddress(".skyVest"));
@@ -132,9 +132,9 @@ contract SetupAllTest is Test {
         safeBase = outputBase.readAddress(".safe");
 
         psm = PSM3(outputBase.readAddress(".psm"));
-        
+
         foreignController = ForeignController(outputBase.readAddress(".almController"));
-        almProxyBase      = ALMProxy(outputBase.readAddress(".almProxy"));
+        almProxyBase      = ALMProxy(payable(outputBase.readAddress(".almProxy")));
 
         assertEq(usds.balanceOf(address(almProxy)), 0);
         assertEq(usdc.balanceOf(address(almProxy)), 0);
@@ -174,7 +174,7 @@ contract SetupAllTest is Test {
         uint256 usdsValue = 1e18;
         vm.prank(safe);
         mainnetController.mintUSDS(usdsValue);
-        
+
         vm.prank(safe);
         mainnetController.burnUSDS(usdsValue);
 
@@ -201,7 +201,7 @@ contract SetupAllTest is Test {
         distribution.distribute();
         skip(7 days);
         distribution.distribute();
-        
+
         uint256 amountEarned = 2_876_712.328767123287280000e18;
 
         assertEq(rewards.earned(address(this)), amountEarned);
@@ -211,7 +211,7 @@ contract SetupAllTest is Test {
 
         // Pull my rewards
         rewards.exit();
-        
+
         assertEq(usds.balanceOf(address(this)), 300e18);
         assertEq(spk.balanceOf(address(this)),  amountEarned);
     }

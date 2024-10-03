@@ -471,10 +471,9 @@ contract SetupAll is Script {
 
         mainnet.almController = new MainnetController({
             admin_      : Ethereum.SPARK_PROXY,
-            proxy_      : address(mainnet.almProxy),
+            proxy_      : payable(address(mainnet.almProxy)),
             rateLimits_ : address(mainnet.rateLimits),
             vault_      : mainnet.allocatorIlkInstance.vault,
-            buffer_     : mainnet.allocatorIlkInstance.buffer,
             psm_        : mainnet.chainlog.getAddress("MCD_LITE_PSM_USDC_A"),
             daiUsds_    : mainnet.usdsInstance.daiUsds,
             cctp_       : mainnet.config.readAddress(".cctpTokenMessenger"),
@@ -701,6 +700,7 @@ contract SetupAll is Script {
         vm.startBroadcast();
 
         domain.psm = new PSM3(
+            domain.l2BridgeInstance.govRelay,
             domain.config.readAddress(".usdc"),
             domain.usdsInstance.usds,
             domain.susdsInstance.sUsds,
